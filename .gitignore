@@ -216,3 +216,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ===== Skin Lesion AI Project =====
+
+# Trained models
+ai/models/*
+!ai/models/.gitkeep
+
+# Dataset
+ai/data/
+datasets/
+
+# TensorFlow / Keras
+*.keras
+*.h5
+*.ckpt
+checkpoint
+
+# macOS
+.DS_Store
+
+# VS Code local settings (opsiyonel)
+.vscode/
