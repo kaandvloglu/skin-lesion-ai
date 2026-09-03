@@ -124,7 +124,7 @@ def _fake_heatmap(img: Image.Image, rng: np.random.Generator) -> Image.Image:
     bölge (kırmızı-sarı) bindirir. Gerçek Grad-CAM gelince bu fonksiyon
     gerçek ısı haritasıyla değişecek.
     """
-    from matplotlib import cm
+    from matplotlib import colormaps
 
     base = img.convert("RGB").resize((300, 300))
     arr = np.asarray(base, dtype=np.float32) / 255.0
@@ -136,7 +136,7 @@ def _fake_heatmap(img: Image.Image, rng: np.random.Generator) -> Image.Image:
     heat = np.exp(-(((xx - cx) ** 2 + (yy - cy) ** 2) / (2.0 * sigma ** 2)))
     heat = (heat - heat.min()) / (heat.max() - heat.min() + 1e-8)
 
-    colored = cm.get_cmap("jet")(heat)[:, :, :3]
+    colored = colormaps["jet"](heat)[:, :, :3]
     alpha = 0.45 * heat[:, :, None]
     blended = (1 - alpha) * arr + alpha * colored
     blended = (np.clip(blended, 0, 1) * 255).astype(np.uint8)

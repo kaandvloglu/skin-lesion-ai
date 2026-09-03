@@ -5,7 +5,6 @@ Kullanıcının gördüğü EKRAN. Çalıştırmak için terminalde:
 
     python3 -m streamlit run app.py
 
-Arayüz metinleri İngilizce; kod yorumları (senin anlaman için) Türkçe.
 Tahmin `model_service.py`'den gelir; şu an sonuçlar SAHTE (demo) veridir.
 
 HCI notu: Nielsen'in 10 kullanılabilirlik prensibi gözetildi
@@ -164,8 +163,8 @@ with col_img2:
 
 with col_meta:
     st.markdown("**Patient details**")
-    age = st.slider("Age", min_value=0, max_value=100, value=45, step=5,
-                    help="Approximate age of the patient.")
+    age = st.slider("Age", min_value=0, max_value=100, value=45, step=1,
+                    help="Patient's age in years.")
     sex = st.radio("Sex", ms.SEX_OPTIONS, horizontal=True)
     skin_tone = st.slider(
         "Skin tone (0 = lightest, 5 = darkest)",
