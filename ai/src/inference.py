@@ -11,42 +11,29 @@ CLASS_NAMES = [
 
 MODEL_PATH = Path(__file__).parent.parent / "models" / "multimodal_model.keras"
 
-model = None
-
-
-def load_model():
-    global model
-
-    if model is None:
-        model = tf.keras.models.load_model(MODEL_PATH)
-
-    return model
+model = tf.keras.models.load_model(MODEL_PATH)
 
 
 def predict(clinical_path, dermoscopic_path, metadata):
 
-    model = load_model()
-
     clinical = preprocess_image(clinical_path)
-    dermoscopic = preprocess_image(dermoscopic_path)
+    derm = preprocess_image(dermoscopic_path)
 
     clinical = np.expand_dims(clinical, 0)
-    dermoscopic = np.expand_dims(dermoscopic, 0)
-    metadata = np.expand_dims(metadata, 0)
+    derm = np.expand_dims(derm, 0)
+    meta = np.expand_dims(metadata, 0)
 
     scores = model.predict(
         {
             "clinical": clinical,
-            "dermoscopic": dermoscopic,
-            "metadata": metadata
+            "dermoscopic": derm,
+            "metadata": meta
         },
         verbose=0
     )[0]
 
-    prediction = CLASS_NAMES[np.argmax(scores)]
-
     return {
-        "prediction": prediction,
+        "prediction": CLASS_NAMES[np.argmax(scores)],
         "confidence": float(np.max(scores)),
         "scores": dict(zip(CLASS_NAMES, scores.tolist()))
     }
