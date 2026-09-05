@@ -23,13 +23,16 @@ public class SecurityConfig {
                         .ignoringRequestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/auth/logout"
+                                "/api/auth/logout",
+                                "/api/predictions/upload"
                         )
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/auth/register",
-                                "/api/auth/login"
+                                "/api/auth/login",
+                                "/api/predictions/test",
+                                "/api/predictions/upload"
                         ).permitAll()
                         .anyRequest().authenticated()
                 );
