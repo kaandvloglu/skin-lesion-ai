@@ -7,3 +7,6 @@ scikit-learn
 jupyter
 tensorflow
 albumentations
+fastapi
+uvicorn
+python-multipart
