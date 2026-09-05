@@ -1,0 +1,13 @@
+[
+  "age_approx",
+  "skin_tone_class",
+  "sex_female",
+  "sex_male",
+  "site_foot",
+  "site_genital",
+  "site_hand",
+  "site_head_neck_face",
+  "site_lower_extremity",
+  "site_trunk",
+  "site_upper_extremity"
+]
