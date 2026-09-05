@@ -5,8 +5,6 @@ Kullanıcının gördüğü EKRAN. Çalıştırmak için terminalde:
 
     python3 -m streamlit run app.py
 
-Tahmin `model_service.py`'den gelir; şu an sonuçlar SAHTE (demo) veridir.
-
 HCI notu: Nielsen'in 10 kullanılabilirlik prensibi gözetildi
 (sistem durumu görünürlüğü, hata önleme, hatadan kurtarma, kullanıcı
 kontrolü/özgürlüğü, yardım & dokümantasyon, tutarlılık, minimalizm).
@@ -19,6 +17,7 @@ import streamlit as st
 from PIL import Image, UnidentifiedImageError
 
 import model_service as ms
+import auth_service as auth
 
 # ---------------------------------------------------------------------------
 # Sabitler / ayarlar
@@ -30,6 +29,50 @@ st.set_page_config(
     page_icon="🔬",
     layout="wide",
 )
+
+# ---------------------------------------------------------------------------
+# GİRİŞ (LOGIN) KAPISI — kullanıcı giriş yapmadan asıl uygulama gösterilmez.
+# Doğrulama auth_service.py'den gelir (şu an mock; sonra gerçek backend).
+# ---------------------------------------------------------------------------
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+
+
+def render_login():
+    st.title("🔬 Skin Lesion Analysis")
+    st.caption("Please sign in to continue.")
+    mid = st.columns([1, 1.4, 1])[1]  # ortada dar bir sütun
+    with mid:
+        with st.form("login_form"):
+            st.subheader("Sign in")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button(
+                "Log in", type="primary", use_container_width=True)
+        if submitted:
+            res = auth.login(username, password)
+            if res["ok"]:
+                st.session_state.auth_ok = True
+                st.session_state.username = res["username"]
+                st.session_state.token = res["token"]
+                st.rerun()
+            else:
+                st.error(res["error"])
+        if auth.SHOW_DEMO_HINT:
+            st.caption("Demo access — username: **demo** · password: **skinai2026**")
+
+
+if not st.session_state.auth_ok:
+    render_login()
+    st.stop()   # giriş yapılmadıysa burada dur, aşağıdaki uygulamayı gösterme
+
+# Buraya sadece giriş yapılmışsa gelinir — kenar çubuğunda hesap + çıkış
+with st.sidebar:
+    st.markdown(f"**Signed in as {st.session_state.get('username', '')}**")
+    if st.button("Log out", use_container_width=True):
+        for k in ("auth_ok", "username", "token", "result", "result_meta"):
+            st.session_state.pop(k, None)
+        st.rerun()
 
 # Klinik gruplara göre renkler (yüksek kontrast; renk TEK BAŞINA anlam taşımaz,
 # her çubukta metin etiketi de vardır — erişilebilirlik / renk körlüğü).
