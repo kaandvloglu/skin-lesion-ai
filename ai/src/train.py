@@ -3,9 +3,14 @@ import json
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
 from .dataset import load_dataset, create_pairs
-from .preprocessing import preprocess_image, encode_metadata
+from .preprocessing import (
+    preprocess_image,
+    augment_image,
+    encode_metadata
+)
 from .model import build_model
 
 # Dataset yolu
@@ -30,8 +35,20 @@ label_to_index = {
     label: i
     for i, label in enumerate(sorted(paired["label"].unique()))
 }
+train_labels = train_df["label"].map(label_to_index).values
 
-def build_dataset(df, meta):
+weights = compute_class_weight(
+    class_weight="balanced",
+    classes=np.unique(train_labels),
+    y=train_labels
+)
+
+class_weights = {
+    i: w
+    for i, w in enumerate(weights)
+}
+
+def build_dataset(df, meta, training=False):
 
     clinical = df["clinical_path"].values
     derm = df["dermoscopic_path"].values
@@ -47,15 +64,23 @@ def build_dataset(df, meta):
         )
     )
 
-    def process(c, d, m, l):
-        return (
-            {
-                "clinical": preprocess_image(c),
-                "dermoscopic": preprocess_image(d),
-                "metadata": m
-            },
-            l
-        )
+    def process(c,d,m,l):
+
+    clinical = preprocess_image(c)
+    derm = preprocess_image(d)
+
+    if training:
+        clinical = augment_image(clinical)
+        derm = augment_image(derm)
+
+    return (
+        {
+            "clinical": clinical,
+            "dermoscopic": derm,
+            "metadata": m
+        },
+        l
+    )
 
     ds = ds.map(
         process,
@@ -68,8 +93,17 @@ def build_dataset(df, meta):
     return ds
 
 # Datasetleri oluştur
-train_ds = build_dataset(train_df, metadata)
-val_ds = build_dataset(val_df, metadata)
+train_ds = build_dataset(
+    train_df,
+    metadata,
+    training=True
+)
+
+val_ds = build_dataset(
+    val_df,
+    metadata,
+    training=False
+)
 
 # Modeli oluştur
 model = build_model(metadata.shape[1])
@@ -81,13 +115,20 @@ Path("ai/models").mkdir(parents=True, exist_ok=True)
 callbacks = [
     EarlyStopping(
         monitor="val_loss",
-        patience=3,
+        patience=5,
         restore_best_weights=True
     ),
+
     ModelCheckpoint(
         "ai/models/multimodal_model.keras",
         monitor="val_loss",
         save_best_only=True
+    ),
+
+    tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.2,
+        patience=2
     )
 ]
 
@@ -96,7 +137,8 @@ history = model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=10,
-    callbacks=callbacks
+    callbacks=callbacks,
+    class_weight=class_weights
 )
 
 # Son modeli kaydet
