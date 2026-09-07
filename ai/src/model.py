@@ -1,32 +1,29 @@
-
 import tensorflow as tf
 from tensorflow.keras.layers import (
     Input,
     Dense,
     Dropout,
     Concatenate,
-    GlobalAveragePooling2D
+    GlobalAveragePooling2D,
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.applications import EfficientNetB3
 
+
 def build_model(metadata_size):
-
-    clinical_input = Input(shape=(300,300,3),name="clinical")
-
-    dermoscopic_input = Input(shape=(300,300,3),name="dermoscopic")
-
-    metadata_input = Input(shape=(metadata_size,),name="metadata")
+    clinical_input = Input(shape=(300, 300, 3), name="clinical")
+    dermoscopic_input = Input(shape=(300, 300, 3), name="dermoscopic")
+    metadata_input = Input(shape=(metadata_size,), name="metadata")
 
     backbone = EfficientNetB3(
         include_top=False,
-        weights="imagenet"
+        weights="imagenet",
     )
 
     backbone.trainable = True
 
     for layer in backbone.layers[:-30]:
-    layer.trainable = False
+        layer.trainable = False
 
     clinical_features = GlobalAveragePooling2D()(
         backbone(clinical_input)
@@ -40,32 +37,31 @@ def build_model(metadata_size):
         [
             clinical_features,
             derm_features,
-            metadata_input
+            metadata_input,
         ]
     )
 
-    x = Dense(512,activation="relu")(fusion)
-
+    x = Dense(512, activation="relu")(fusion)
     x = Dropout(0.3)(x)
 
     output = Dense(
         11,
-        activation="softmax"
+        activation="softmax",
     )(x)
 
     model = Model(
         inputs=[
             clinical_input,
             dermoscopic_input,
-            metadata_input
+            metadata_input,
         ],
-        outputs=output
+        outputs=output,
     )
 
     model.compile(
-    optimizer=tf.keras.optimizers.Adam(1e-5),
-    loss="sparse_categorical_crossentropy",
-    metrics=["accuracy"]
-)
+        optimizer=tf.keras.optimizers.Adam(1e-5),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
 
     return model

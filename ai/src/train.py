@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 import numpy as np
@@ -42,7 +41,8 @@ train_df, val_df = train_test_split(
 
 # Label mapping
 label_to_index = {
-    label: i for i, label in enumerate(sorted(paired["label"].unique()))
+    label: i
+    for i, label in enumerate(sorted(paired["label"].unique()))
 }
 
 train_labels = train_df["label"].map(label_to_index).values
@@ -54,7 +54,8 @@ weights = compute_class_weight(
 )
 
 class_weights = {
-    i: w for i, w in enumerate(weights)
+    i: w
+    for i, w in enumerate(weights)
 }
 
 

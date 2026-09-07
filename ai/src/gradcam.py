@@ -1,15 +1,14 @@
-
 import tensorflow as tf
 import numpy as np
 import cv2
+
 
 def make_gradcam_heatmap(
     img_array,
     model,
     last_conv_layer_name
 ):
-
-    grad_model=tf.keras.models.Model(
+    grad_model = tf.keras.models.Model(
         model.inputs,
         [
             model.get_layer(last_conv_layer_name).output,
@@ -18,23 +17,19 @@ def make_gradcam_heatmap(
     )
 
     with tf.GradientTape() as tape:
+        conv_output, preds = grad_model(img_array)
 
-        conv_output,preds=grad_model(img_array)
+        class_idx = tf.argmax(preds[0])
+        loss = preds[:, class_idx]
 
-        class_idx=tf.argmax(preds[0])
+    grads = tape.gradient(loss, conv_output)
 
-        loss=preds[:,class_idx]
+    pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    grads=tape.gradient(loss,conv_output)
+    heatmap = conv_output[0] @ pooled[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
 
-    pooled=tf.reduce_mean(grads,axis=(0,1,2))
-
-    heatmap=conv_output[0]@pooled[...,tf.newaxis]
-
-    heatmap=tf.squeeze(heatmap)
-
-    heatmap=np.maximum(heatmap,0)
-
-    heatmap/=np.max(heatmap)
+    heatmap = np.maximum(heatmap, 0)
+    heatmap /= np.max(heatmap)
 
     return heatmap
