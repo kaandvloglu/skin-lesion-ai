@@ -1,6 +1,13 @@
 import pandas as pd
 import tensorflow as tf
 
+def augment_image(image):
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_up_down(image)
+    image = tf.image.random_brightness(image, 0.15)
+    image = tf.image.random_contrast(image, 0.8, 1.2)
+    return image
+
 IMG_SIZE = 300
 
 def preprocess_image(path):
