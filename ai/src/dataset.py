@@ -28,7 +28,7 @@ def load_dataset(data_path):
 def create_pairs(dataset, data_path):
     data_path = Path(data_path)
 
-    # Dataset içindeki tüm JPG dosyalarını bul
+    # Dataset içindeki bütün jpg dosyalarını bul
     image_files = list(data_path.rglob("*.jpg"))
 
     image_map = {
@@ -47,15 +47,24 @@ def create_pairs(dataset, data_path):
     clinical["clinical_path"] = clinical["isic_id"].map(image_map)
     dermoscopic["dermoscopic_path"] = dermoscopic["isic_id"].map(image_map)
 
-    # Resmi bulunamayan kayıtları çıkar
-    clinical = clinical.dropna(subset=["clinical_path"])
-    dermoscopic = dermoscopic.dropna(subset=["dermoscopic_path"])
-
     paired = clinical.merge(
         dermoscopic[["lesion_id", "dermoscopic_path"]],
         on="lesion_id"
     )
 
     paired["label"] = paired[CLASS_COLUMNS].idxmax(axis=1)
+
+    # Eksik dosya yollarını temizle
+    before = len(paired)
+
+    paired = paired.dropna(
+        subset=["clinical_path", "dermoscopic_path"]
+    )
+
+    after = len(paired)
+
+    print(f"Total pairs: {before}")
+    print(f"Valid pairs: {after}")
+    print(f"Removed: {before-after}")
 
     return paired
