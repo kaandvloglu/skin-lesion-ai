@@ -18,7 +18,7 @@ from .model import build_model
 
 # Dataset yolu (Kaggle veya lokal)
 if os.path.exists("/kaggle/input"):
-    metadata_file = next(Path("/kaggle/input").rglob("MILK10K_Training_Metadata.csv"))
+    metadata_file = next(Path("/kaggle/input").rglob("MILK10k_Training_Metadata.csv"))
     DATA_PATH = str(metadata_file.parent)
 else:
     DATA_PATH = "ai/data/MILK10K"
