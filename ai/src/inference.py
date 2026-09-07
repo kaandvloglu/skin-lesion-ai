@@ -5,17 +5,20 @@ import numpy as np
 from .preprocessing import preprocess_image
 
 CLASS_NAMES = [
-    "AKIEC","BCC","BEN_OTH","BKL","DF",
-    "INF","MAL_OTH","MEL","NV","SCCKA","VASC"
+    "AKIEC", "BCC", "BEN_OTH", "BKL", "DF",
+    "INF", "MAL_OTH", "MEL", "NV", "SCCKA", "VASC"
 ]
 
-MODEL_PATH = Path(__file__).parent.parent / "models" / "multimodal_model.keras"
+MODEL_PATH = (
+    Path(__file__).parent.parent
+    / "models"
+    / "multimodal_model.keras"
+)
 
 model = tf.keras.models.load_model(MODEL_PATH)
 
 
 def predict(clinical_path, dermoscopic_path, metadata):
-
     clinical = preprocess_image(clinical_path)
     derm = preprocess_image(dermoscopic_path)
 
