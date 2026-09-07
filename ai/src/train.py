@@ -17,12 +17,13 @@ from .model import build_model
 
 
 # Dataset yolu (Kaggle veya lokal)
-KAGGLE_PATH = Path("/kaggle/input/datasets/kaandevelioglu/milk10k-skin-lesion-dataset")
-
-if KAGGLE_PATH.exists():
-    DATA_PATH = str(KAGGLE_PATH)
+if os.path.exists("/kaggle/input"):
+    metadata_file = next(Path("/kaggle/input").rglob("MILK10K_Training_Metadata.csv"))
+    DATA_PATH = str(metadata_file.parent)
 else:
     DATA_PATH = "ai/data/MILK10K"
+
+print("Using DATA_PATH:", DATA_PATH)
 
 
 # Dataseti yükle
