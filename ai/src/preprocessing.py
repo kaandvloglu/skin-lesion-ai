@@ -4,7 +4,7 @@ import tensorflow as tf
 IMG_SIZE = 300
 
 def preprocess_image(path):
-    img = tf.io.read_file(str(path))
+    img = tf.io.read_file(path)
     img = tf.image.decode_jpeg(img, channels=3)
     img = tf.image.resize(img, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
