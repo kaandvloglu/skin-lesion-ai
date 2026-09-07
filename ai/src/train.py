@@ -1,4 +1,12 @@
 from pathlib import Path
+import os
+
+KAGGLE_PATH = Path("/kaggle/input/datasets/kaandevelioglu/milk10k-skin-lesion-dataset")
+
+if KAGGLE_PATH.exists():
+    DATA_PATH = str(KAGGLE_PATH)
+else:
+    DATA_PATH = "ai/data/MILK10K"
 import json
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
