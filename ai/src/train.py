@@ -14,7 +14,15 @@ from .preprocessing import (
 from .model import build_model
 
 # Dataset yolu
-DATA_PATH = "data/MILK10K"
+from pathlib import Path
+import os
+
+if os.path.exists("/kaggle/input"):
+    DATA_PATH = str(
+        next(Path("/kaggle/input").rglob("MILK10K_Training_Metadata.csv")).parent
+    )
+else:
+    DATA_PATH = "ai/data/MILK10K"
 
 # Dataseti yükle
 paired = create_pairs(load_dataset(DATA_PATH), DATA_PATH)
