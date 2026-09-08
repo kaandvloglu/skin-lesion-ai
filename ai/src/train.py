@@ -18,8 +18,7 @@ from .model import build_model
 
 # Dataset yolu (Kaggle veya lokal)
 if os.path.exists("/kaggle/input"):
-    metadata_file = next(Path("/kaggle/input").rglob("MILK10K_Training_Metadata.csv"))
-    DATA_PATH = str(metadata_file.parent)
+    DATA_PATH = "/kaggle/input/milk10k-skin-lesion-dataset"
 else:
     DATA_PATH = "data/MILK10K"
 
