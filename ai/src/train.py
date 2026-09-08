@@ -18,7 +18,7 @@ from .model import build_model
 
 # Dataset yolu (Kaggle veya lokal)
 if os.path.exists("/kaggle/input"):
-    DATA_PATH = "/kaggle/input/milk10k-skin-lesion-dataset"
+    DATA_PATH = "/kaggle/input/datasets/kaandevelioglu/milk10k-skin-lesion-dataset"
 else:
     DATA_PATH = "data/MILK10K"
 
