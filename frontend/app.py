@@ -452,13 +452,6 @@ if result is not None:
         help="Save a text file with the inputs, all 11 scores and the disclaimer.",
     )
 
-    st.divider()
-    st.info(
-        "ℹ️ These results are currently **demo (placeholder) data**. Once the AI "
-        "model is connected, real predictions will appear here automatically — "
-        "no changes to the interface are needed."
-    )
-
 elif not analyze:
     # Henüz sonuç yok — ne yapılacağını söyle (sistem durumu görünürlüğü)
     st.info("👆 Upload the two photos and patient details, then click **Analyze**.")
