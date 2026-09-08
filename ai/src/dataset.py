@@ -29,7 +29,8 @@ def create_pairs(dataset, data_path=None):
     root = Path("/kaggle/input")
 
     # Gerçek resim klasörü (iç içe klasör)
-    image_root = next(root.rglob("MILK10k_Training_Input/MILK10k_Training_Input"))
+    outer = next(root.rglob("MILK10k_Training_Input"))
+    image_root = outer / "MILK10k_Training_Input"
 
     pairs = []
 
