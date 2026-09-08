@@ -21,7 +21,7 @@ def build_model(metadata_size):
 
     backbone.trainable = True
 
-    for layer in backbone.layers[:-80]:
+    for layer in backbone.layers[:-60]:
         layer.trainable = False
 
     clinical_features = GlobalAveragePooling2D()(
@@ -61,7 +61,7 @@ def build_model(metadata_size):
     )
 
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(1e-4),
+        optimizer=tf.keras.optimizers.Adam(3e-5),
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
