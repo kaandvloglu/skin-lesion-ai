@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import os
-
+import pandas as pd
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
@@ -28,7 +28,7 @@ print("Using DATA_PATH:", DATA_PATH)
 
 # Dataseti yükle
 dataset = load_dataset(DATA_PATH)
-paired = create_pairs(dataset, DATA_PATH)
+paired = pd.DataFrame(create_pairs(dataset, DATA_PATH))
 
 # Metadata encode
 metadata = encode_metadata(paired)
