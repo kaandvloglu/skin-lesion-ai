@@ -1,14 +1,13 @@
 import tensorflow as tf
-from tensorflow.keras.layers import (
+from keras.layers import (
     Input,
     Dense,
     Dropout,
     Concatenate,
     GlobalAveragePooling2D,
 )
-from tensorflow.keras.models import Model
-from tensorflow.keras.applications import EfficientNetB3
-
+from keras.models import Model
+from keras.applications import EfficientNetB3
 
 def build_model(metadata_size):
     clinical_input = Input(shape=(300, 300, 3), name="clinical")
@@ -22,7 +21,7 @@ def build_model(metadata_size):
 
     backbone.trainable = True
 
-    for layer in backbone.layers[:-15]:
+    for layer in backbone.layers[:-80]:
         layer.trainable = False
 
     clinical_features = GlobalAveragePooling2D()(
@@ -42,6 +41,9 @@ def build_model(metadata_size):
     )
 
     x = Dense(512, activation="relu")(fusion)
+    x = Dropout(0.4)(x)
+
+    x = Dense(256, activation="relu")(x)
     x = Dropout(0.3)(x)
 
     output = Dense(

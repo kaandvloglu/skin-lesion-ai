@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
-from tensorflow.keras.callbacks import (
+from keras.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
     ReduceLROnPlateau,
@@ -129,7 +129,7 @@ Path("ai/models").mkdir(parents=True, exist_ok=True)
 callbacks = [
     EarlyStopping(
         monitor="val_loss",
-        patience=5,
+        patience=7,
         restore_best_weights=True,
     ),
     ModelCheckpoint(
@@ -139,8 +139,9 @@ callbacks = [
     ),
     ReduceLROnPlateau(
         monitor="val_loss",
-        factor=0.2,
-        patience=2,
+        factor=0.5,
+        patience=3,
+        min_lr=1e-6
     ),
 ]
 
