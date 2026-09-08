@@ -44,7 +44,22 @@ başarısızsa:
    erişecek. Backend'in dışarıdan erişime (HTTPS/CORS) açık olması gerekiyor —
    bu tarafta bir ayar gerekiyor mu?
 
+## 4. Kayıt (Register) — ek bilgiler
+
+Giriş ekranına bir **"Sign up" (Kayıt ol)** sekmesi de eklendi (şu an mock).
+Gerçek backend'e bağlamak için kayıt tarafı için de şunları öğrenmemiz gerekiyor:
+
+1. **Kayıt adresi ve yöntemi:** ör. `POST https://.../register`
+2. **İstenen alanlar:** sadece kullanıcı adı + şifre mi, yoksa e-posta / ad-soyad da var mı?
+3. **İstek formatı:** ör. `{ "username": "...", "password": "..." }`
+4. **Başarılı cevap:** kayıt sonrası kullanıcı otomatik giriş yapmış mı sayılıyor
+   (token dönüyor mu), yoksa "kaydoldu, şimdi giriş yap" mı? Hangi alanlar dönüyor?
+5. **Hata durumları:** kullanıcı adı zaten alınmışsa / şifre kuralları
+   sağlanmazsa hangi kod/mesaj dönüyor?
+6. **Şifre kuralları:** en az uzunluk, karakter kuralı vb. var mı? (Arayüzde
+   aynı kuralı gösterelim.)
+
 ---
 
-Bu cevaplar gelince giriş ekranını gerçek backend'e bağlamak, `auth_service.py`
-içinde küçük bir değişiklik olacak.
+Bu cevaplar gelince giriş ve kayıt ekranlarını gerçek backend'e bağlamak,
+`auth_service.py` içinde küçük bir değişiklik olacak.

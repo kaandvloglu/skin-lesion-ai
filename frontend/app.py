@@ -5,6 +5,9 @@ Kullanıcının gördüğü EKRAN. Çalıştırmak için terminalde:
 
     python3 -m streamlit run app.py
 
+Arayüz metinleri İngilizce; kod yorumları (senin anlaman için) Türkçe.
+Tahmin `model_service.py`'den gelir; şu an sonuçlar SAHTE (demo) veridir.
+
 HCI notu: Nielsen'in 10 kullanılabilirlik prensibi gözetildi
 (sistem durumu görünürlüğü, hata önleme, hatadan kurtarma, kullanıcı
 kontrolü/özgürlüğü, yardım & dokümantasyon, tutarlılık, minimalizm).
@@ -38,28 +41,56 @@ if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
 
 
+def _enter_app(res):
+    """Başarılı giriş/kayıt sonrası oturumu aç."""
+    st.session_state.auth_ok = True
+    st.session_state.username = res["username"]
+    st.session_state.token = res["token"]
+    st.rerun()
+
+
 def render_login():
     st.title("🔬 Skin Lesion Analysis")
-    st.caption("Please sign in to continue.")
+    st.caption("Sign in to continue, or create a new account.")
     mid = st.columns([1, 1.4, 1])[1]  # ortada dar bir sütun
     with mid:
-        with st.form("login_form"):
-            st.subheader("Sign in")
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button(
-                "Log in", type="primary", use_container_width=True)
-        if submitted:
-            res = auth.login(username, password)
-            if res["ok"]:
-                st.session_state.auth_ok = True
-                st.session_state.username = res["username"]
-                st.session_state.token = res["token"]
-                st.rerun()
-            else:
-                st.error(res["error"])
-        if auth.SHOW_DEMO_HINT:
-            st.caption("Demo access — username: **demo** · password: **skinai2026**")
+        tab_in, tab_up = st.tabs(["Sign in", "Sign up"])
+
+        # --- Giriş sekmesi ---
+        with tab_in:
+            with st.form("login_form"):
+                username = st.text_input("Username", key="li_user")
+                password = st.text_input("Password", type="password", key="li_pass")
+                submitted = st.form_submit_button(
+                    "Log in", type="primary", use_container_width=True)
+            if submitted:
+                res = auth.login(username, password)
+                if res["ok"]:
+                    _enter_app(res)
+                else:
+                    st.error(res["error"])
+            if auth.SHOW_DEMO_HINT:
+                st.caption("Demo access — username: **demo** · password: **skinai2026**")
+
+        # --- Kayıt sekmesi ---
+        with tab_up:
+            with st.form("register_form"):
+                new_user = st.text_input("Choose a username", key="su_user")
+                new_pass = st.text_input("Choose a password", type="password", key="su_pass")
+                new_pass2 = st.text_input("Confirm password", type="password", key="su_pass2")
+                created = st.form_submit_button(
+                    "Create account", type="primary", use_container_width=True)
+            if created:
+                if new_pass != new_pass2:
+                    st.error("The two passwords do not match. Please try again.")
+                else:
+                    res = auth.register(new_user, new_pass)
+                    if res["ok"]:
+                        st.success("Account created. Signing you in…")
+                        _enter_app(res)
+                    else:
+                        st.error(res["error"])
+            st.caption(f"Password must be at least {auth.MIN_PASSWORD_LEN} characters.")
 
 
 if not st.session_state.auth_ok:
@@ -235,9 +266,11 @@ with c_analyze:
 with c_clear:
     st.button("↺ Clear", use_container_width=True, on_click=clear_all)
 
-# Butonun neden pasif olduğunu açıkça söyle (sistem durumu görünürlüğü)
+# Durumu açıkça söyle (sistem durumu görünürlüğü): eksikse yönlendir, tamsa onayla
 if not both_images_ready:
     st.caption("⤷ Upload **both** a clinical and a dermoscopic photo to enable analysis.")
+else:
+    st.caption("✅ Both images are ready. Click **Analyze** to continue.")
 
 st.divider()
 
