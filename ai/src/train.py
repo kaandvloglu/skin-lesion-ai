@@ -17,7 +17,7 @@ from .preprocessing import preprocess_image, augment_image, encode_metadata
 from .model import build_model
 
 
-# Dataset yolu (Kaggle veya lokal)
+# Dataset yolu
 if os.path.exists("/kaggle/input"):
     DATA_PATH = "/kaggle/input"
 else:
@@ -30,7 +30,9 @@ print("Using DATA_PATH:", DATA_PATH)
 dataset = load_dataset(DATA_PATH)
 paired = pd.DataFrame(create_pairs(dataset, DATA_PATH))
 
-# Metadata encode
+print(f"Total paired samples: {len(paired)}")
+
+# Metadata
 metadata = encode_metadata(paired)
 
 # Train / Validation split
@@ -55,7 +57,10 @@ weights = compute_class_weight(
     y=train_labels,
 )
 
-class_weights = {i: w for i, w in enumerate(weights)}
+class_weights = {
+    i: float(w)
+    for i, w in enumerate(weights)
+}
 
 
 def build_dataset(df, meta, training=False):
@@ -67,6 +72,9 @@ def build_dataset(df, meta, training=False):
     ds = tf.data.Dataset.from_tensor_slices(
         (clinical, derm, meta_values, labels)
     )
+
+    if training:
+        ds = ds.shuffle(1000)
 
     def process(c, d, m, l):
         clinical_img = preprocess_image(c)
@@ -86,26 +94,29 @@ def build_dataset(df, meta, training=False):
         )
 
     ds = ds.map(process, num_parallel_calls=tf.data.AUTOTUNE)
-    ds = ds.batch(32).prefetch(tf.data.AUTOTUNE)
+
+    if not training:
+        ds = ds.cache()
+
+    ds = ds.batch(16)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
 
     return ds
 
 
-# Datasetleri oluştur
 train_ds = build_dataset(train_df, metadata, training=True)
 val_ds = build_dataset(val_df, metadata, training=False)
 
-# Modeli oluştur
+
+# Model
 model = build_model(metadata.shape[1])
 
-# Model klasörü
 Path("ai/models").mkdir(parents=True, exist_ok=True)
 
-# Callbackler
 callbacks = [
     EarlyStopping(
         monitor="val_loss",
-        patience=7,
+        patience=5,
         restore_best_weights=True,
     ),
     ModelCheckpoint(
@@ -116,23 +127,22 @@ callbacks = [
     ReduceLROnPlateau(
         monitor="val_loss",
         factor=0.5,
-        patience=3,
+        patience=2,
         min_lr=1e-6,
+        verbose=1,
     ),
 ]
 
-# Eğitim
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=20,
+    epochs=25,
     callbacks=callbacks,
     class_weight=class_weights,
+    verbose=1,
 )
 
-# Son modeli kaydet
 model.save("ai/models/multimodal_model.keras")
 
-# Metadata sütunlarını kaydet
 with open("ai/models/metadata_columns.json", "w") as f:
     json.dump(metadata.columns.tolist(), f)

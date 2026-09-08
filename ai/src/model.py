@@ -5,9 +5,11 @@ from keras.layers import (
     Dropout,
     Concatenate,
     GlobalAveragePooling2D,
+    BatchNormalization,
 )
 from keras.models import Model
 from keras.applications import EfficientNetB3
+
 
 def build_model(metadata_size):
     clinical_input = Input(shape=(300, 300, 3), name="clinical")
@@ -17,51 +19,38 @@ def build_model(metadata_size):
     backbone = EfficientNetB3(
         include_top=False,
         weights="imagenet",
+        input_shape=(300, 300, 3),
     )
 
-    backbone.trainable = True
+    # İlk aşamada backbone'u dondur
+    backbone.trainable = False
 
-    for layer in backbone.layers[:-60]:
-        layer.trainable = False
+    clinical_features = GlobalAveragePooling2D()(backbone(clinical_input))
+    derm_features = GlobalAveragePooling2D()(backbone(dermoscopic_input))
 
-    clinical_features = GlobalAveragePooling2D()(
-        backbone(clinical_input)
-    )
+    fusion = Concatenate()([
+        clinical_features,
+        derm_features,
+        metadata_input,
+    ])
 
-    derm_features = GlobalAveragePooling2D()(
-        backbone(dermoscopic_input)
-    )
+    x = BatchNormalization()(fusion)
 
-    fusion = Concatenate()(
-        [
-            clinical_features,
-            derm_features,
-            metadata_input,
-        ]
-    )
-
-    x = Dense(512, activation="relu")(fusion)
-    x = Dropout(0.4)(x)
+    x = Dense(512, activation="relu")(x)
+    x = Dropout(0.5)(x)
 
     x = Dense(256, activation="relu")(x)
-    x = Dropout(0.3)(x)
+    x = Dropout(0.4)(x)
 
-    output = Dense(
-        11,
-        activation="softmax",
-    )(x)
+    output = Dense(11, activation="softmax")(x)
 
     model = Model(
-        inputs=[
-            clinical_input,
-            dermoscopic_input,
-            metadata_input,
-        ],
+        inputs=[clinical_input, dermoscopic_input, metadata_input],
         outputs=output,
     )
 
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(3e-5),
+        optimizer=tf.keras.optimizers.Adam(3e-4),
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
