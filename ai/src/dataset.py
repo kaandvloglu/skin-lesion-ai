@@ -10,8 +10,8 @@ CLASS_COLUMNS = [
 def load_dataset(data_path):
     data_path = Path(data_path)
 
-    metadata_path = next(data_path.rglob("MILK10k_Training_Metadata.csv"))
-    groundtruth_path = next(data_path.rglob("MILK10k_Training_GroundTruth.csv"))
+    metadata_path = Path("/kaggle/input/datasets/kaandevelioglu/milk10k-skin-lesion-dataset/MILK10K_Training_Metadata.csv")
+    groundtruth_path = Path("/kaggle/input/datasets/kaandevelioglu/milk10k-skin-lesion-dataset/MILK10k_Training_GroundTruth.csv")
 
     metadata = pd.read_csv(metadata_path)
     groundtruth = pd.read_csv(groundtruth_path)
