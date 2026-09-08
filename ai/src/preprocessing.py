@@ -1,6 +1,7 @@
 import pandas as pd
 import tensorflow as tf
-
+import keras
+from keras import layers
 IMG_SIZE = 300
 
 def preprocess_image(path):
@@ -30,9 +31,17 @@ def encode_metadata(df, columns=None):
     return metadata.astype("float32")
 
 
+augmenter = tf.keras.Sequential([
+    layers.RandomFlip("horizontal_and_vertical"),
+    layers.RandomRotation(0.08),
+    layers.RandomZoom(0.10),
+    layers.RandomTranslation(0.05, 0.05),
+    layers.RandomContrast(0.15),
+])
+
+
 def augment_image(image):
-    image = tf.image.random_flip_left_right(image)
-    image = tf.image.random_flip_up_down(image)
+    image = augmenter(image, training=True)
     image = tf.image.random_brightness(image, 0.15)
-    image = tf.image.random_contrast(image, 0.8, 1.2)
+    image = tf.clip_by_value(image, 0.0, 1.0)
     return image

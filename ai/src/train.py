@@ -97,7 +97,7 @@ def build_dataset(df, meta, training=False):
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
-    ds = ds.batch(16)
+    ds = ds.batch(32)
     ds = ds.prefetch(tf.data.AUTOTUNE)
 
     return ds
@@ -149,7 +149,7 @@ callbacks = [
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=10,
+    epochs=20,
     callbacks=callbacks,
     class_weight=class_weights,
 )
