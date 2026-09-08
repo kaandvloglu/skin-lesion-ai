@@ -7,10 +7,10 @@ CLASS_COLUMNS = [
 ]
 
 
-def load_dataset(data_path):
+def load_dataset(data_path=None):
     root = Path("/kaggle/input")
 
-    metadata_path = next(root.rglob("MILK10K_Training_Metadata.csv"))
+    metadata_path = next(root.rglob("MILK10k_Training_Metadata.csv"))
     groundtruth_path = next(root.rglob("MILK10k_Training_GroundTruth.csv"))
 
     metadata = pd.read_csv(metadata_path)
@@ -25,46 +25,23 @@ def load_dataset(data_path):
     return dataset
 
 
-def create_pairs(dataset, data_path):
-    data_path = Path(data_path)
+def create_pairs(dataset, data_path=None):
+    root = Path("/kaggle/input")
 
-    # Dataset içindeki bütün jpg dosyalarını bul
-    image_files = list(data_path.rglob("*.jpg"))
+    image_root = next(root.rglob("MILK10k_Training_Input"))
 
-    image_map = {
-        img.stem: str(img)
-        for img in image_files
-    }
+    pairs = []
 
-    clinical = dataset[
-        dataset["image_type"] == "clinical: close-up"
-    ].copy()
+    for _, row in dataset.iterrows():
+        lesion_folder = image_root / row["lesion_id"]
 
-    dermoscopic = dataset[
-        dataset["image_type"] == "dermoscopic"
-    ].copy()
+        if not lesion_folder.exists():
+            continue
 
-    clinical["clinical_path"] = clinical["isic_id"].map(image_map)
-    dermoscopic["dermoscopic_path"] = dermoscopic["isic_id"].map(image_map)
+        for img in lesion_folder.glob("*.jpg"):
+            pairs.append({
+                "image_path": str(img),
+                "metadata": row.to_dict()
+            })
 
-    paired = clinical.merge(
-        dermoscopic[["lesion_id", "dermoscopic_path"]],
-        on="lesion_id"
-    )
-
-    paired["label"] = paired[CLASS_COLUMNS].idxmax(axis=1)
-
-    # Eksik dosya yollarını temizle
-    before = len(paired)
-
-    paired = paired.dropna(
-        subset=["clinical_path", "dermoscopic_path"]
-    )
-
-    after = len(paired)
-
-    print(f"Total pairs: {before}")
-    print(f"Valid pairs: {after}")
-    print(f"Removed: {before-after}")
-
-    return paired
+    return pairs

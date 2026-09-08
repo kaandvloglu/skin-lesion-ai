@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
-import os 
+import os
+
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
@@ -18,7 +19,7 @@ from .model import build_model
 
 # Dataset yolu (Kaggle veya lokal)
 if os.path.exists("/kaggle/input"):
-    DATA_PATH = "/kaggle/input/milk10k-skin-lesion-dataset"
+    DATA_PATH = "/kaggle/input"
 else:
     DATA_PATH = "data/MILK10K"
 
@@ -26,7 +27,8 @@ print("Using DATA_PATH:", DATA_PATH)
 
 
 # Dataseti yükle
-paired = create_pairs(load_dataset(DATA_PATH), DATA_PATH)
+dataset = load_dataset(DATA_PATH)
+paired = create_pairs(dataset, DATA_PATH)
 
 # Metadata encode
 metadata = encode_metadata(paired)
@@ -53,25 +55,17 @@ weights = compute_class_weight(
     y=train_labels,
 )
 
-class_weights = {
-    i: w
-    for i, w in enumerate(weights)
-}
+class_weights = {i: w for i, w in enumerate(weights)}
 
 
 def build_dataset(df, meta, training=False):
     clinical = df["clinical_path"].values
     derm = df["dermoscopic_path"].values
     labels = df["label"].map(label_to_index).values
-    meta_values = meta.loc[df.index].values
+    meta_values = meta.loc[df.index].to_numpy(dtype="float32")
 
     ds = tf.data.Dataset.from_tensor_slices(
-        (
-            clinical,
-            derm,
-            meta_values,
-            labels,
-        )
+        (clinical, derm, meta_values, labels)
     )
 
     def process(c, d, m, l):
@@ -91,38 +85,21 @@ def build_dataset(df, meta, training=False):
             l,
         )
 
-    ds = ds.map(
-        process,
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
-
-    ds = ds.batch(32)
-    ds = ds.prefetch(tf.data.AUTOTUNE)
+    ds = ds.map(process, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.batch(32).prefetch(tf.data.AUTOTUNE)
 
     return ds
 
 
 # Datasetleri oluştur
-train_ds = build_dataset(
-    train_df,
-    metadata,
-    training=True,
-)
-
-val_ds = build_dataset(
-    val_df,
-    metadata,
-    training=False,
-)
-
+train_ds = build_dataset(train_df, metadata, training=True)
+val_ds = build_dataset(val_df, metadata, training=False)
 
 # Modeli oluştur
 model = build_model(metadata.shape[1])
 
-
 # Model klasörü
 Path("ai/models").mkdir(parents=True, exist_ok=True)
-
 
 # Callbackler
 callbacks = [
@@ -140,10 +117,9 @@ callbacks = [
         monitor="val_loss",
         factor=0.5,
         patience=3,
-        min_lr=1e-6
+        min_lr=1e-6,
     ),
 ]
-
 
 # Eğitim
 history = model.fit(
@@ -154,10 +130,8 @@ history = model.fit(
     class_weight=class_weights,
 )
 
-
 # Son modeli kaydet
 model.save("ai/models/multimodal_model.keras")
-
 
 # Metadata sütunlarını kaydet
 with open("ai/models/metadata_columns.json", "w") as f:
