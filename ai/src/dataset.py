@@ -8,11 +8,19 @@ CLASS_COLUMNS = [
 
 
 def load_dataset(data_path=None):
-    root = Path("/kaggle/input")
+    if data_path is not None:
+        root = Path(data_path)
+    elif Path("/kaggle/input").exists():
+        root = Path("/kaggle/input")
+    else:
+        root = Path("ai/data/MILK10K")
 
-    metadata_path = next(root.rglob("MILK10k_Training_Metadata.csv"))
+    try:
+        metadata_path = next(root.rglob("MILK10k_Training_Metadata.csv"))
+    except StopIteration:
+        metadata_path = next(root.rglob("MILK10K_Training_Metadata.csv"))
+
     groundtruth_path = next(root.rglob("MILK10k_Training_GroundTruth.csv"))
-
     metadata = pd.read_csv(metadata_path)
     groundtruth = pd.read_csv(groundtruth_path)
 
@@ -26,11 +34,20 @@ def load_dataset(data_path=None):
 
 
 def create_pairs(dataset, data_path=None):
-    root = Path("/kaggle/input")
+    if data_path is not None:
+        root = Path(data_path)
+    elif Path("/kaggle/input").exists():
+        root = Path("/kaggle/input")
+    else:
+        root = Path("ai/data/MILK10K")
 
-    # Gerçek resim klasörü (iç içe klasör)
-    outer = next(root.rglob("MILK10k_Training_Input"))
-    image_root = outer / "MILK10k_Training_Input"
+    # Gerçek resim klasörü
+    try:
+        outer = next(root.rglob("MILK10K_Training_Input"))
+    except StopIteration:
+        outer = next(root.rglob("MILK10K_Training_Input"))
+
+    image_root = outer
 
     pairs = []
 
@@ -58,15 +75,19 @@ def create_pairs(dataset, data_path=None):
             if clinical_row[col] == 1
         )
 
+        first = group.iloc[0]
+
         pairs.append({
             "lesion_id": lesion_id,
             "clinical_path": str(clinical_path),
             "dermoscopic_path": str(derm_path),
             "label": label,
-            "age_approx": clinical_row["age_approx"],
-            "sex": clinical_row["sex"],
-            "skin_tone_class": clinical_row["skin_tone_class"],
-            "site": clinical_row["site"],
+
+            # Metadata'yı da taşı
+            "age_approx": first["age_approx"],
+            "sex": first["sex"],
+            "skin_tone_class": first["skin_tone_class"],
+            "site": first["site"],
         })
 
     return pairs

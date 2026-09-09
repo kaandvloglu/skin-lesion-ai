@@ -15,7 +15,15 @@ from keras.callbacks import (
 from .dataset import load_dataset, create_pairs
 from .preprocessing import preprocess_image, augment_image, encode_metadata
 from .model import build_model
-
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    classification_report,
+    confusion_matrix,
+)
+import matplotlib.pyplot as plt
 
 # Dataset yolu
 if os.path.exists("/kaggle/input"):
@@ -109,7 +117,7 @@ val_ds = build_dataset(val_df, metadata, training=False)
 
 
 # Model
-model = build_model(metadata.shape[1])
+model: tf.keras.Model = build_model(metadata.shape[1])  # type: ignore[assignment]
 
 Path("ai/models").mkdir(parents=True, exist_ok=True)
 
@@ -139,8 +147,8 @@ print("Total pairs:", len(paired))
 print("Train samples:", len(train_df))
 print("Validation samples:", len(val_df))
 print("Metadata shape:", metadata.shape)
-print("Batch size: 32")
-print("Expected steps:", (len(train_df)+31)//32)
+print("Batch size: 16")
+print("Expected steps:", (len(train_df)+15)//16)
 print("="*50)
 
 history = model.fit(
@@ -149,10 +157,63 @@ history = model.fit(
     epochs=25,
     callbacks=callbacks,
     #class_weight=class_weights,
-    verbose=2,
+    verbose="2",
 )
 
 model.save("ai/models/multimodal_model.keras")
 
 with open("ai/models/metadata_columns.json", "w") as f:
     json.dump(metadata.columns.tolist(), f)
+
+print("\nEvaluating model on validation set...")
+
+# Gerçek etiketler
+y_true = val_df["label"].map(label_to_index).to_numpy(dtype=np.int32)
+# Model tahminleri
+predictions = model.predict(val_ds, verbose="0")
+y_pred = np.argmax(predictions, axis=1)
+
+print("=" * 50)
+print("VALIDATION METRICS")
+print("=" * 50)
+
+print(f"Accuracy : {accuracy_score(y_true, y_pred):.4f}")
+print(f"Precision: {precision_score(y_true, y_pred, average='weighted', zero_division=0):.4f}")
+print(f"Recall   : {recall_score(y_true, y_pred, average='weighted', zero_division=0):.4f}")
+print(f"F1 Score : {f1_score(y_true, y_pred, average='weighted', zero_division=0):.4f}")
+
+target_names = [
+    label
+    for label, _
+    in sorted(label_to_index.items(), key=lambda x: x[1])
+]
+
+print("\nClassification Report:\n")
+print(
+    classification_report(
+        y_true,
+        y_pred,
+        target_names=target_names,
+        zero_division=0,
+    )
+)
+
+cm = confusion_matrix(y_true, y_pred)
+
+plt.figure(figsize=(10, 8))
+plt.imshow(cm)
+plt.title("Confusion Matrix")
+plt.colorbar()
+
+ticks = np.arange(len(target_names))
+plt.xticks(ticks, target_names, rotation=45)
+plt.yticks(ticks, target_names)
+
+plt.xlabel("Predicted")
+plt.ylabel("True")
+
+plt.tight_layout()
+plt.savefig("ai/models/confusion_matrix.png")
+plt.show()
+
+print("\nConfusion matrix saved to ai/models/confusion_matrix.png")
