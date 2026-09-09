@@ -7,6 +7,7 @@ import tensorflow as tf
 from keras.models import load_model
 
 from .preprocessing import preprocess_image, encode_metadata
+from .gradcam import make_gradcam_heatmap, heatmap_to_base64
 
 CLASSES = [
     "AKIEC",
@@ -64,6 +65,18 @@ def predict(clinical_path, dermoscopic_path, age, sex, skin_tone, site):
 
     probs = model.predict(inputs, verbose=0)[0]
 
+    clinical_heatmap = make_gradcam_heatmap(
+        model,
+        inputs,
+        branch="clinical",
+    )
+
+    dermoscopic_heatmap = make_gradcam_heatmap(
+        model,
+        inputs,
+        branch="dermoscopic",
+    )
+
     top3 = np.argsort(probs)[::-1][:3]
 
     print("\nPrediction")
@@ -87,8 +100,14 @@ def predict(clinical_path, dermoscopic_path, age, sex, skin_tone, site):
             for idx in top3
         ],
         "gradcam": {
-            "clinical": None,
-            "dermoscopic": None,
+            "clinical": heatmap_to_base64(
+                clinical,
+                clinical_heatmap,
+            ),
+            "dermoscopic": heatmap_to_base64(
+                derm,
+                dermoscopic_heatmap,
+            ),
         },
     }
 
