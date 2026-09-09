@@ -22,8 +22,10 @@ def build_model(metadata_size):
         input_shape=(300, 300, 3),
     )
 
-    # İlk aşamada backbone'u dondur
-    backbone.trainable = False
+    backbone.trainable = True
+
+    for layer in backbone.layers[:-40]:
+        layer.trainable = False
 
     clinical_features = GlobalAveragePooling2D()(backbone(clinical_input))
     derm_features = GlobalAveragePooling2D()(backbone(dermoscopic_input))

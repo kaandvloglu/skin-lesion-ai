@@ -148,7 +148,7 @@ history = model.fit(
     validation_data=val_ds,
     epochs=25,
     callbacks=callbacks,
-    class_weight=class_weights,
+    #class_weight=class_weights,
     verbose=2,
 )
 
