@@ -1,0 +1,12 @@
+albumentations
+fastapi
+jupyter
+matplotlib
+numpy
+opencv-python
+pandas
+Pillow
+python-multipart
+scikit-learn
+tensorflow
+uvicorn
