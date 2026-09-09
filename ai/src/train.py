@@ -132,6 +132,16 @@ callbacks = [
         verbose=1,
     ),
 ]
+print("="*50)
+print("DATASET CHECK")
+print("="*50)
+print("Total pairs:", len(paired))
+print("Train samples:", len(train_df))
+print("Validation samples:", len(val_df))
+print("Metadata shape:", metadata.shape)
+print("Batch size: 32")
+print("Expected steps:", (len(train_df)+31)//32)
+print("="*50)
 
 history = model.fit(
     train_ds,
@@ -139,7 +149,7 @@ history = model.fit(
     epochs=25,
     callbacks=callbacks,
     class_weight=class_weights,
-    verbose=1,
+    verbose=str(1),
 )
 
 model.save("ai/models/multimodal_model.keras")
