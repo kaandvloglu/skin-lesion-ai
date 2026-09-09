@@ -27,3 +27,11 @@ Prediction
 ```
 
 The inference pipeline successfully predicts the three most probable lesion classes using both image modalities and encoded metadata.
+
+## Final Model Performance
+
+- Validation Accuracy:
+- Macro F1:
+- Weighted F1:
+- Epochs: 25
+- Framework: TensorFlow/Keras

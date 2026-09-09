@@ -1,7 +1,5 @@
-
 import json
 import argparse
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -58,14 +56,13 @@ def predict(clinical_path, dermoscopic_path, age, sex, skin_tone, site):
 
     metadata = build_metadata(age, sex, skin_tone, site)
 
-    probs = model.predict(
-        {
-            "clinical": clinical,
-            "dermoscopic": derm,
-            "metadata": metadata,
-        },
-        verbose=0,
-    )[0]
+    inputs = {
+        "clinical": clinical,
+        "dermoscopic": derm,
+        "metadata": tf.convert_to_tensor(metadata),
+    }
+
+    probs = model.predict(inputs, verbose=0)[0]
 
     top3 = np.argsort(probs)[::-1][:3]
 
@@ -73,9 +70,29 @@ def predict(clinical_path, dermoscopic_path, age, sex, skin_tone, site):
     print("-" * 30)
 
     for rank, idx in enumerate(top3, 1):
-        print(f"{rank}. {CLASSES[idx]:8} {probs[idx]*100:.2f}%")
+        print(f"{rank}. {CLASSES[idx]:8} {probs[idx] * 100:.2f}%")
 
-    return CLASSES[top3[0]], probs
+    result = {
+        "prediction": CLASSES[top3[0]],
+        "confidence": float(probs[top3[0]]),
+        "scores": {
+            CLASSES[i]: float(probs[i])
+            for i in range(len(CLASSES))
+        },
+        "top3": [
+            {
+                "label": CLASSES[idx],
+                "confidence": float(probs[idx]),
+            }
+            for idx in top3
+        ],
+        "gradcam": {
+            "clinical": None,
+            "dermoscopic": None,
+        },
+    }
+
+    return result
 
 
 if __name__ == "__main__":
@@ -90,7 +107,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    predict(
+    result = predict(
         args.clinical,
         args.dermoscopic,
         args.age,
@@ -98,3 +115,6 @@ if __name__ == "__main__":
         args.skin_tone,
         args.site,
     )
+
+    print("\nReturned Result:")
+    print(json.dumps(result, indent=2))
