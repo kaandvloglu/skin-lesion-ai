@@ -149,7 +149,7 @@ history = model.fit(
     epochs=25,
     callbacks=callbacks,
     class_weight=class_weights,
-    verbose=str(1),
+    verbose=2,
 )
 
 model.save("ai/models/multimodal_model.keras")
