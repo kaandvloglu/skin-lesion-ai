@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from pathlib import Path
 import tempfile
 import json
+import gc
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,6 @@ with open(ROOT / "ai" / "models" / "metadata_columns.json") as f:
 
 
 app = FastAPI(title="Skin Lesion AI API")
-
 
 # Keras model is loaded only when Grad-CAM is requested.
 gradcam_model = None
@@ -80,7 +80,6 @@ async def predict_endpoint(
     skin_tone: int = Form(...),
     site: str = Form(...)
 ):
-    # Save clinical image temporarily
     with tempfile.NamedTemporaryFile(
         suffix=".jpg",
         delete=False
@@ -88,7 +87,6 @@ async def predict_endpoint(
         c_file.write(await clinical_image.read())
         clinical_path = Path(c_file.name)
 
-    # Save dermoscopic image temporarily
     with tempfile.NamedTemporaryFile(
         suffix=".jpg",
         delete=False
@@ -97,7 +95,6 @@ async def predict_endpoint(
         dermoscopic_path = Path(d_file.name)
 
     try:
-        # Prepare raw metadata
         df = pd.DataFrame([{
             "age_approx": age,
             "sex": sex,
@@ -105,13 +102,11 @@ async def predict_endpoint(
             "site": site
         }])
 
-        # Convert metadata to exact training columns
         metadata = encode_metadata(
             df,
             columns=TRAINING_COLUMNS
         ).iloc[0].to_numpy(dtype=np.float32)
 
-        # Run TFLite AI model
         result = predict(
             clinical_path,
             dermoscopic_path,
@@ -134,7 +129,6 @@ async def gradcam_endpoint(
     skin_tone: int = Form(...),
     site: str = Form(...)
 ):
-    # Save clinical image temporarily
     with tempfile.NamedTemporaryFile(
         suffix=".jpg",
         delete=False
@@ -142,7 +136,6 @@ async def gradcam_endpoint(
         c_file.write(await clinical_image.read())
         clinical_path = Path(c_file.name)
 
-    # Save dermoscopic image temporarily
     with tempfile.NamedTemporaryFile(
         suffix=".jpg",
         delete=False
@@ -153,7 +146,6 @@ async def gradcam_endpoint(
     try:
         print("DEBUG: Grad-CAM request started", flush=True)
 
-        # Prepare metadata
         df = pd.DataFrame([{
             "age_approx": age,
             "sex": sex,
@@ -166,7 +158,6 @@ async def gradcam_endpoint(
             columns=TRAINING_COLUMNS
         ).iloc[0].to_numpy(dtype=np.float32)
 
-        # Preprocess images for Keras model
         clinical = preprocess_image(clinical_path)
         dermoscopic = preprocess_image(dermoscopic_path)
 
@@ -180,10 +171,16 @@ async def gradcam_endpoint(
             "metadata": metadata_tensor
         }
 
-        # Load Keras model only when needed
         model = get_gradcam_model()
 
-        print("DEBUG: Creating clinical Grad-CAM...", flush=True)
+        # -----------------------------
+        # CLINICAL GRAD-CAM
+        # -----------------------------
+
+        print(
+            "DEBUG: Creating clinical Grad-CAM...",
+            flush=True
+        )
 
         clinical_heatmap = make_gradcam_heatmap(
             model,
@@ -191,7 +188,28 @@ async def gradcam_endpoint(
             branch="clinical"
         )
 
-        print("DEBUG: Creating dermoscopic Grad-CAM...", flush=True)
+        clinical_gradcam = heatmap_to_base64(
+            clinical,
+            clinical_heatmap
+        )
+
+        # Free heatmap memory before starting the second Grad-CAM.
+        del clinical_heatmap
+        gc.collect()
+
+        print(
+            "DEBUG: Clinical Grad-CAM completed.",
+            flush=True
+        )
+
+        # -----------------------------
+        # DERMOSCOPIC GRAD-CAM
+        # -----------------------------
+
+        print(
+            "DEBUG: Creating dermoscopic Grad-CAM...",
+            flush=True
+        )
 
         dermoscopic_heatmap = make_gradcam_heatmap(
             model,
@@ -199,18 +217,23 @@ async def gradcam_endpoint(
             branch="dermoscopic"
         )
 
-        # Convert heatmaps to base64 PNG images
-        clinical_gradcam = heatmap_to_base64(
-            clinical,
-            clinical_heatmap
-        )
-
         dermoscopic_gradcam = heatmap_to_base64(
             dermoscopic,
             dermoscopic_heatmap
         )
 
-        print("DEBUG: Grad-CAM completed", flush=True)
+        del dermoscopic_heatmap
+        gc.collect()
+
+        print(
+            "DEBUG: Dermoscopic Grad-CAM completed.",
+            flush=True
+        )
+
+        print(
+            "DEBUG: Grad-CAM completed",
+            flush=True
+        )
 
         return {
             "clinical_gradcam": clinical_gradcam,
@@ -220,3 +243,5 @@ async def gradcam_endpoint(
     finally:
         clinical_path.unlink(missing_ok=True)
         dermoscopic_path.unlink(missing_ok=True)
+
+        gc.collect()
