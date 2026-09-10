@@ -1,5 +1,4 @@
 import gc
-import base64
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +10,7 @@ from ai.src.gradcam import make_gradcam_heatmap, heatmap_to_base64
 
 app = FastAPI()
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 KERAS_MODEL_PATH = ROOT / "ai" / "models" / "multimodal_model.keras"
 
 gradcam_model = None
