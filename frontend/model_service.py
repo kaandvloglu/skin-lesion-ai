@@ -3,26 +3,43 @@ model_service.py
 ------------------
 Bu dosya, ARAYÜZ ile YAPAY ZEKA MODELİ arasındaki köprüdür.
 
-Şu an model henüz hazır olmadığı için burada SAHTE (mock) sonuçlar üretiyoruz.
-Böylece arayüzü baştan sona geliştirip test edebiliriz.
+Model artık backend (Spring Boot → FastAPI → TFLite) üzerinden internette
+yayında, o yüzden burada GERÇEK tahmin isteği atıyoruz:
+    Frontend → Spring Boot /api/predictions/upload → (FastAPI + model) → cevap
 
-Model / API hazır olduğunda SADECE bu dosyadaki `predict()` fonksiyonunun içini
-değiştirmemiz yeterli olacak; app.py'ye (arayüze) hiç dokunmayacağız.
+Giriş çerezi gerekiyorsa diye, auth_service ile AYNI oturumu (requests.Session)
+kullanıyoruz.
+
+GÜVENLİK ANAHTARI:
+    USE_BACKEND = True iken gerçek modele bağlanır.
+    Sorun olursa tek satırı `USE_BACKEND = False` yap → uygulama anında eski
+    çalışan SAHTE (mock) sonuçlarına döner. Canlı uygulama asla bozulmaz.
 
 NOT (rapordan): Model her sınıf için AYRI (bağımsız) bir olasılık üretir
-(sigmoid). Yani skorların toplamı 1 (yüzde 100) etmez; her kategori kendi
-başına değerlendirilir. Bu yüzden arayüzde bunları "yüzde dağılımı" gibi
-değil, her kategori için ayrı "olasılık/güven" olarak gösteriyoruz.
+(sigmoid). Skorların toplamı %100 etmez; her kategori kendi başına değerlendirilir.
 """
 
 from __future__ import annotations
+import io
 import time
+import base64
+
 import numpy as np
 from PIL import Image
 
+import auth_service
+
 # ---------------------------------------------------------------------------
-# 11 tanı kategorisi (rapordaki MILK10k sınıfları). Kullanıcıya görünen
-# metinler İngilizce. "group" alanı arayüzde renklendirme için kullanılır.
+# AYARLAR
+# ---------------------------------------------------------------------------
+USE_BACKEND = True
+BACKEND_URL = "https://skin-lesion-backend-nnfv.onrender.com"
+PREDICT_PATH = "/api/predictions/upload"
+TIMEOUT = 120  # Render ilk istekte "uykudan" uyanabilir → geniş zaman aşımı
+
+# ---------------------------------------------------------------------------
+# 11 tanı kategorisi (MILK10k). Kullanıcıya görünen metinler İngilizce.
+# "code" değerleri backend'in döndürdüğü skor anahtarlarıyla BİREBİR aynı.
 # ---------------------------------------------------------------------------
 CLASSES = [
     {"code": "NV",      "name": "Melanocytic nevus (mole)",                  "group": "Benign"},
@@ -38,19 +55,31 @@ CLASSES = [
     {"code": "MAL_OTH", "name": "Other malignant proliferation",           "group": "Malignant"},
 ]
 
-# Vücut bölgesi seçenekleri (İngilizce)
-ANATOM_SITES = [
-    "Head / neck",
-    "Anterior torso",
-    "Posterior torso",
-    "Upper limb (arm)",
-    "Lower limb (leg)",
-    "Palms / soles",
-    "Oral / genital",
-    "Unknown",
-]
+# ---------------------------------------------------------------------------
+# Vücut bölgesi seçenekleri.
+# Arayüzde okunaklı İngilizce etiket gösterilir; backend'e ise onun beklediği
+# kısa kod ("trunk", "head_neck_face" ...) gönderilir. SITE_API bu eşlemeyi tutar.
+# Backend'in kabul ettiği 7 değer: foot, genital, hand, head_neck_face,
+# lower_extremity, trunk, upper_extremity.
+# ---------------------------------------------------------------------------
+SITE_API = {
+    "Head / neck / face":  "head_neck_face",
+    "Trunk":               "trunk",
+    "Upper limb (arm)":    "upper_extremity",
+    "Lower limb (leg)":    "lower_extremity",
+    "Hand":                "hand",
+    "Foot":                "foot",
+    "Genital":             "genital",
+}
+ANATOM_SITES = list(SITE_API.keys())
 
-SEX_OPTIONS = ["Female", "Male", "Unspecified"]
+# Cinsiyet: arayüzde okunaklı etiket, backend'e küçük harf değer.
+# Backend'in kabul ettiği değerler: male, female.
+SEX_API = {
+    "Female": "female",
+    "Male":   "male",
+}
+SEX_OPTIONS = list(SEX_API.keys())
 
 
 def predict(clinical_img: Image.Image,
@@ -60,82 +89,148 @@ def predict(clinical_img: Image.Image,
     Bir lezyon için tahmin döndürür.
 
     GİRDİLER:
-      clinical_img    : Klinik (normal) yakın çekim fotoğrafı (PIL Image)
+      clinical_img    : Klinik yakın çekim (PIL Image)
       dermoscopic_img : Dermoskopik fotoğraf (PIL Image)
       metadata        : {"age": int, "sex": str, "skin_tone": int, "site": str}
+                        (sex ve site burada ARAYÜZ ETİKETİ olarak gelir;
+                         backend'e gönderirken kısa koda çevrilir.)
 
     ÇIKTI (sözlük):
       {
-        "scores": [0.82, 0.13, ...],       # 11 sınıf için BAĞIMSIZ olasılıklar (her biri 0-1)
-        "gradcam_clinical":    PIL Image,   # klinik görsel için ısı haritası
-        "gradcam_dermoscopic": PIL Image,   # dermoskopik görsel için ısı haritası
-        "inference_seconds":   float,       # tahmin süresi
+        "scores": [11 bağımsız olasılık, CLASSES sırasında],
+        "gradcam_clinical":    PIL Image | None,
+        "gradcam_dermoscopic": PIL Image | None,
+        "inference_seconds":   float,
       }
-
-    ============================================================
-    ŞU AN: Aşağısı SAHTE veri üretir (demo amaçlı).
-    GERÇEK MODELE GEÇERKEN: Bu fonksiyonun içini şu şekilde değiştireceğiz:
-        - Görselleri modele/API'ye gönder
-        - Dönen 11 skoru ve Grad-CAM ısı haritalarını al
-        - Aynı sözlük formatında geri döndür
-    Arayüz (app.py) hiç değişmeyecek.
-    ============================================================
     """
     start = time.time()
 
-    # --- SAHTE skorlar üret (bağımsız, toplamları 1 OLMAK ZORUNDA DEĞİL) -----
+    # ----- GERÇEK BACKEND -----
+    if USE_BACKEND:
+        result = _predict_backend(clinical_img, dermoscopic_img, metadata)
+        result["inference_seconds"] = time.time() - start
+        return result
+
+    # ----- MOCK (yedek) -----
+    result = _predict_mock(clinical_img, dermoscopic_img, metadata)
+    result["inference_seconds"] = time.time() - start
+    return result
+
+
+# ---------------------------------------------------------------------------
+# GERÇEK backend tahmini
+# ---------------------------------------------------------------------------
+def _predict_backend(clinical_img, dermoscopic_img, metadata) -> dict:
+    sex_label = metadata.get("sex", "")
+    site_label = metadata.get("site", "")
+
+    files = {
+        "clinical_image":    ("clinical.jpg",    _to_jpeg_bytes(clinical_img),    "image/jpeg"),
+        "dermoscopic_image": ("dermoscopic.jpg", _to_jpeg_bytes(dermoscopic_img), "image/jpeg"),
+    }
+    data = {
+        "age":       str(int(metadata.get("age", 0))),
+        "sex":       SEX_API.get(sex_label, str(sex_label).lower()),
+        "skin_tone": str(int(metadata.get("skin_tone", 0))),
+        "site":      SITE_API.get(site_label, str(site_label)),
+    }
+
+    session = auth_service.get_session()
+    r = session.post(
+        f"{BACKEND_URL}{PREDICT_PATH}",
+        files=files,
+        data=data,
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    payload = r.json()
+
+    # --- Skorları CLASSES sırasına göre listeye çevir -----------------------
+    raw_scores = payload.get("scores", {}) or {}
+    scores = [float(raw_scores.get(cls["code"], 0.0)) for cls in CLASSES]
+
+    # --- Grad-CAM ısı haritaları (henüz cevaba eklenmemiş olabilir) ---------
+    # Değişik olası alan adlarını dener; yoksa None döner → arayüz o bölümü gizler.
+    gradcam_clinical = _extract_image(payload, [
+        "gradcam_clinical", "gradCamClinical", "heatmap_clinical",
+        "gradcam_clinical_image", "clinical_gradcam",
+    ])
+    gradcam_dermoscopic = _extract_image(payload, [
+        "gradcam_dermoscopic", "gradCamDermoscopic", "heatmap_dermoscopic",
+        "gradcam_dermoscopic_image", "dermoscopic_gradcam",
+    ])
+
+    return {
+        "scores": scores,
+        "gradcam_clinical": gradcam_clinical,
+        "gradcam_dermoscopic": gradcam_dermoscopic,
+    }
+
+
+def _to_jpeg_bytes(img: Image.Image) -> bytes:
+    """PIL görselini JPEG bayt dizisine çevirir (istek gövdesinde göndermek için)."""
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=90)
+    buf.seek(0)
+    return buf.read()
+
+
+def _extract_image(payload: dict, keys) -> Image.Image | None:
+    """
+    Cevaptaki olası bir görsel alanını (base64 / data-URL) PIL görsele çevirir.
+    Bulamazsa None döndürür (arayüz Grad-CAM bölümünü gizler).
+    """
+    for k in keys:
+        val = payload.get(k)
+        if not val or not isinstance(val, str):
+            continue
+        try:
+            # "data:image/png;base64,...." biçimini de destekle
+            if "," in val and val.strip().lower().startswith("data:"):
+                val = val.split(",", 1)[1]
+            raw = base64.b64decode(val)
+            return Image.open(io.BytesIO(raw)).convert("RGB")
+        except Exception:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------------------
+# MOCK (yedek) — sadece USE_BACKEND = False iken kullanılır.
+# ---------------------------------------------------------------------------
+def _predict_mock(clinical_img, dermoscopic_img, metadata) -> dict:
     seed = _seed_from_inputs(clinical_img, metadata)
     rng = np.random.default_rng(seed)
-    # Her sınıf için düşük bir taban skor
     scores = rng.random(len(CLASSES)) * 0.35
-    # Bir "baskın" sınıf ve bir-iki ikincil sınıfı yükselt (gerçekçi görünsün)
     dominant = rng.integers(0, len(CLASSES))
     scores[dominant] = 0.70 + rng.random() * 0.28
     secondary = rng.integers(0, len(CLASSES))
     scores[secondary] = max(scores[secondary], 0.40 + rng.random() * 0.25)
     scores = [float(min(0.99, s)) for s in scores]
-
-    # --- SAHTE Grad-CAM ısı haritaları üret ---------------------------------
-    gradcam_clinical = _fake_heatmap(clinical_img, rng)
-    gradcam_dermoscopic = _fake_heatmap(dermoscopic_img, rng)
-
-    elapsed = time.time() - start
     return {
         "scores": scores,
-        "gradcam_clinical": gradcam_clinical,
-        "gradcam_dermoscopic": gradcam_dermoscopic,
-        "inference_seconds": elapsed,
+        "gradcam_clinical": _fake_heatmap(clinical_img, rng),
+        "gradcam_dermoscopic": _fake_heatmap(dermoscopic_img, rng),
     }
 
 
-# ---------------------------------------------------------------------------
-# Yardımcı fonksiyonlar (sadece sahte demo için; gerçek modelde silinebilir)
-# ---------------------------------------------------------------------------
 def _seed_from_inputs(img: Image.Image, metadata: dict) -> int:
-    """Görsel + yaş bilgisinden tekrarlanabilir bir sayı üretir."""
     small = np.asarray(img.convert("L").resize((16, 16)), dtype=np.int64)
     base = int(small.sum()) + int(metadata.get("age", 0)) * 7
     return base % (2**31)
 
 
 def _fake_heatmap(img: Image.Image, rng: np.random.Generator) -> Image.Image:
-    """
-    Görselin üzerine, modelin 'baktığı yer' gibi görünen sahte bir sıcak
-    bölge (kırmızı-sarı) bindirir. Gerçek Grad-CAM gelince bu fonksiyon
-    gerçek ısı haritasıyla değişecek.
-    """
     from matplotlib import colormaps
 
     base = img.convert("RGB").resize((300, 300))
     arr = np.asarray(base, dtype=np.float32) / 255.0
     h, w = 300, 300
-
     cy, cx = rng.integers(90, 210), rng.integers(90, 210)
     yy, xx = np.mgrid[0:h, 0:w]
     sigma = rng.integers(45, 80)
     heat = np.exp(-(((xx - cx) ** 2 + (yy - cy) ** 2) / (2.0 * sigma ** 2)))
     heat = (heat - heat.min()) / (heat.max() - heat.min() + 1e-8)
-
     colored = colormaps["jet"](heat)[:, :, :3]
     alpha = 0.45 * heat[:, :, None]
     blended = (1 - alpha) * arr + alpha * colored

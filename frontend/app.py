@@ -59,23 +59,24 @@ def render_login():
         # --- Giriş sekmesi ---
         with tab_in:
             with st.form("login_form"):
-                username = st.text_input("Username", key="li_user")
+                email = st.text_input("Email", key="li_email")
                 password = st.text_input("Password", type="password", key="li_pass")
                 submitted = st.form_submit_button(
                     "Log in", type="primary", use_container_width=True)
             if submitted:
-                res = auth.login(username, password)
+                res = auth.login(email, password)
                 if res["ok"]:
                     _enter_app(res)
                 else:
                     st.error(res["error"])
             if auth.SHOW_DEMO_HINT:
-                st.caption("Demo access — username: **demo** · password: **skinai2026**")
+                st.caption("Demo access — email: **demo@skinai.local** · password: **skinai2026**")
 
         # --- Kayıt sekmesi ---
         with tab_up:
             with st.form("register_form"):
-                new_user = st.text_input("Choose a username", key="su_user")
+                new_name = st.text_input("Full name", key="su_name")
+                new_email = st.text_input("Email", key="su_email")
                 new_pass = st.text_input("Choose a password", type="password", key="su_pass")
                 new_pass2 = st.text_input("Confirm password", type="password", key="su_pass2")
                 created = st.form_submit_button(
@@ -84,7 +85,7 @@ def render_login():
                 if new_pass != new_pass2:
                     st.error("The two passwords do not match. Please try again.")
                 else:
-                    res = auth.register(new_user, new_pass)
+                    res = auth.register(new_name, new_email, new_pass)
                     if res["ok"]:
                         st.success("Account created. Signing you in…")
                         _enter_app(res)
@@ -162,7 +163,7 @@ with st.expander("ℹ️ How to use this tool"):
         3. Click **Analyze**. Within a few seconds you will see:
            - the **likelihood for each of the 11 categories** (each score is
              independent, so they do **not** add up to 100%),
-           - two **Grad-CAM heatmaps** showing where the model looked,
+           - **Grad-CAM heatmaps** showing where the model looked (when available),
         4. Use **Clear** to start a new analysis at any time.
         """.format(mb=MAX_FILE_MB)
     )
@@ -402,26 +403,32 @@ if result is not None:
         unsafe_allow_html=True,
     )
 
+    # Grad-CAM ısı haritaları — sadece model bunları döndürdüyse göster.
+    # (Backend heatmap eklemeden önce bu bölüm otomatik gizli kalır; sahte
+    #  görsel göstermeyiz.)
+    gradcam_clinical = result.get("gradcam_clinical")
+    gradcam_dermoscopic = result.get("gradcam_dermoscopic")
+    if gradcam_clinical is not None or gradcam_dermoscopic is not None:
+        st.divider()
+        st.subheader("Where the model looked (Grad-CAM)")
+        st.caption(
+            "The red-yellow areas are where the model focused most when making its "
+            "prediction. A separate heatmap is shown for each image."
+        )
+        gc1, gc2 = st.columns(2)
+        with gc1:
+            st.markdown("**Clinical photo**")
+            if gradcam_clinical is not None:
+                st.image(gradcam_clinical, use_container_width=True)
+        with gc2:
+            st.markdown("**Dermoscopic photo**")
+            if gradcam_dermoscopic is not None:
+                st.image(gradcam_dermoscopic, use_container_width=True)
+
     st.divider()
 
-    # Grad-CAM ısı haritaları
-    st.subheader("3) Where the model looked (Grad-CAM)")
-    st.caption(
-        "The red-yellow areas are where the model focused most when making its "
-        "prediction. A separate heatmap is shown for each image."
-    )
-    gc1, gc2 = st.columns(2)
-    with gc1:
-        st.markdown("**Clinical photo**")
-        st.image(result["gradcam_clinical"], use_container_width=True)
-    with gc2:
-        st.markdown("**Dermoscopic photo**")
-        st.image(result["gradcam_dermoscopic"], use_container_width=True)
-
-    st.divider()
-
-    # --- İndirilebilir sonuç özeti (Adım 3) --------------------------------
-    st.subheader("4) Save the result")
+    # --- İndirilebilir sonuç özeti -----------------------------------------
+    st.subheader("Save the result")
     meta = st.session_state.result_meta or {}
     lines = [
         "SKIN LESION ANALYSIS — RESULT SUMMARY",
