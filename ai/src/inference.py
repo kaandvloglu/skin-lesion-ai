@@ -42,18 +42,20 @@ def predict(clinical_path, dermoscopic_path, metadata):
         flush=True
     )
 
-    print("DEBUG 7: model.predict() starting...", flush=True)
+    print("DEBUG 7: model inference starting...", flush=True)
 
-    scores = model.predict(
+    outputs = model(
         {
             "clinical": clinical,
             "dermoscopic": derm,
             "metadata": meta
         },
-        verbose=0
-    )[0]
+        training=False
+    )
 
-    print("DEBUG 8: model.predict() completed", flush=True)
+    scores = outputs.numpy()[0]
+
+    print("DEBUG 8: model inference completed", flush=True)
 
     result = {
         "prediction": CLASS_NAMES[np.argmax(scores)],
