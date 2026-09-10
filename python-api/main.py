@@ -25,11 +25,13 @@ def root():
 
 @app.get("/model-info")
 def model_info():
-    from ai.src.inference import model
+    from ai.src.inference import get_model
+
+    current_model = get_model()
 
     return {
         "model_loaded": True,
-        "input_shapes": [list(shape) for shape in model.input_shape]
+        "input_shapes": [list(shape) for shape in current_model.input_shape]
     }
 
 

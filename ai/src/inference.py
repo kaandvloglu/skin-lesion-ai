@@ -11,11 +11,24 @@ CLASS_NAMES = [
 
 MODEL_PATH = Path(__file__).parent.parent / "models" / "multimodal_model.keras"
 
-print("DEBUG: Loading AI model...", flush=True)
+# Model başlangıçta yüklenmeyecek
+model = None
 
-model = tf.keras.models.load_model(MODEL_PATH)
 
-print("DEBUG: AI model loaded successfully.", flush=True)
+def get_model():
+    global model
+
+    if model is None:
+        print("DEBUG: Loading AI model...", flush=True)
+
+        model = tf.keras.models.load_model(
+            MODEL_PATH,
+            compile=False
+        )
+
+        print("DEBUG: AI model loaded successfully.", flush=True)
+
+    return model
 
 
 def predict(clinical_path, dermoscopic_path, metadata):
@@ -35,6 +48,7 @@ def predict(clinical_path, dermoscopic_path, metadata):
     meta = np.expand_dims(metadata, 0)
 
     print("DEBUG 6: model inputs prepared", flush=True)
+
     print(
         f"DEBUG: clinical={clinical.shape}, "
         f"dermoscopic={derm.shape}, "
@@ -42,9 +56,12 @@ def predict(clinical_path, dermoscopic_path, metadata):
         flush=True
     )
 
+    # Model sadece ilk tahminde burada yüklenecek
+    current_model = get_model()
+
     print("DEBUG 7: model inference starting...", flush=True)
 
-    outputs = model(
+    outputs = current_model(
         {
             "clinical": clinical,
             "dermoscopic": derm,
