@@ -1,248 +1,438 @@
 import base64
-import io
 import gc
+from io import BytesIO
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+from PIL import Image
 
 
-# Feature extractor only needs to be created once.
-_feature_extractor = None
-_feature_extractor_model_id = None
+# ============================================================
+# MODEL LAYER NAMES
+# ============================================================
+
+EFFICIENTNET_LAYER = "efficientnetb3"
+
+CLINICAL_GAP_LAYER = "global_average_pooling2d_2"
+DERMOSCOPIC_GAP_LAYER = "global_average_pooling2d_3"
+
+CONCAT_LAYER = "concatenate_1"
+
+DENSE_LAYER = "dense_2"
+DROPOUT_LAYER = "dropout_1"
+OUTPUT_LAYER = "dense_3"
 
 
-def get_feature_extractor(model):
-    global _feature_extractor
-    global _feature_extractor_model_id
-
-    current_model_id = id(model)
-
-    if (
-        _feature_extractor is None
-        or _feature_extractor_model_id != current_model_id
-    ):
-        backbone = model.get_layer("efficientnetb3")
-
-        last_conv = None
-
-        for layer in reversed(backbone.layers):
-            if isinstance(layer, tf.keras.layers.Conv2D):
-                last_conv = layer.name
-                break
-
-        if last_conv is None:
-            raise ValueError(
-                "No Conv2D layer found in efficientnetb3."
-            )
-
-        _feature_extractor = tf.keras.Model(
-            inputs=backbone.input,
-            outputs=[
-                backbone.get_layer(last_conv).output,
-                backbone.output,
-            ],
-        )
-
-        _feature_extractor_model_id = current_model_id
-
-    return _feature_extractor
-
-
-def heatmap_to_base64(img_tensor, heatmap):
-    img = img_tensor[0].numpy()
-
-    plt.figure(figsize=(4, 4))
-    plt.imshow(img)
-    plt.imshow(
-        heatmap,
-        cmap="jet",
-        alpha=0.45
-    )
-    plt.axis("off")
-
-    buf = io.BytesIO()
-
-    plt.savefig(
-        buf,
-        format="png",
-        bbox_inches="tight",
-        pad_inches=0
-    )
-
-    plt.close()
-
-    result = base64.b64encode(
-        buf.getvalue()
-    ).decode()
-
-    buf.close()
-
-    return result
-
+# ============================================================
+# GRAD-CAM
+# ============================================================
 
 def make_gradcam_heatmap(
     model,
-    inputs,
-    branch="clinical"
+    clinical_image,
+    dermoscopic_image,
+    metadata,
+    branch="clinical",
+    class_index=None
 ):
-    feature_extractor = get_feature_extractor(model)
 
-    if branch == "clinical":
-        img = inputs["clinical"]
-        other = inputs["dermoscopic"]
+    """
+    Memory optimized Grad-CAM.
 
-        gap_layer = model.get_layer(
-            "global_average_pooling2d_2"
+    Critical optimization:
+
+    EfficientNet forward passes are executed OUTSIDE
+    GradientTape.
+
+    Therefore TensorFlow does not need to keep all
+    EfficientNet intermediate activations in memory
+    for backpropagation.
+
+    GradientTape only watches the final EfficientNet
+    feature map and the small classification head.
+    """
+
+    if branch not in (
+        "clinical",
+        "dermoscopic"
+    ):
+        raise ValueError(
+            "branch must be 'clinical' or 'dermoscopic'"
         )
 
-        other_gap = model.get_layer(
-            "global_average_pooling2d_3"
-        )
+    # --------------------------------------------------------
+    # Get model components
+    # --------------------------------------------------------
 
-    else:
-        img = inputs["dermoscopic"]
-        other = inputs["clinical"]
+    efficientnet = model.get_layer(
+        EFFICIENTNET_LAYER
+    )
 
-        gap_layer = model.get_layer(
-            "global_average_pooling2d_3"
-        )
+    clinical_gap = model.get_layer(
+        CLINICAL_GAP_LAYER
+    )
 
-        other_gap = model.get_layer(
-            "global_average_pooling2d_2"
-        )
+    dermoscopic_gap = model.get_layer(
+        DERMOSCOPIC_GAP_LAYER
+    )
 
-    # ------------------------------------------------
-    # IMPORTANT MEMORY OPTIMIZATION
+    concatenate = model.get_layer(
+        CONCAT_LAYER
+    )
+
+    dense = model.get_layer(
+        DENSE_LAYER
+    )
+
+    dropout = model.get_layer(
+        DROPOUT_LAYER
+    )
+
+    output_layer = model.get_layer(
+        OUTPUT_LAYER
+    )
+
+    # --------------------------------------------------------
+    # IMPORTANT:
     #
-    # We do NOT need gradients for the other image.
-    # Therefore calculate it completely OUTSIDE
-    # GradientTape.
-    # ------------------------------------------------
+    # EfficientNet is NOT executed inside GradientTape.
+    #
+    # This is the major RAM optimization.
+    # --------------------------------------------------------
 
-    _, other_feature = feature_extractor(
-        other,
+    clinical_features = efficientnet(
+        clinical_image,
         training=False
     )
 
-    other_feature = tf.stop_gradient(
-        other_feature
+    dermoscopic_features = efficientnet(
+        dermoscopic_image,
+        training=False
     )
 
-    pooled_other = other_gap(
-        other_feature
-    )
+    # --------------------------------------------------------
+    # Select target feature map
+    # --------------------------------------------------------
 
-    del other_feature
+    if branch == "clinical":
 
-    gc.collect()
+        target_features = clinical_features
 
-    # ------------------------------------------------
-    # GradientTape now only tracks the image for which
-    # Grad-CAM is being generated.
-    # ------------------------------------------------
+    else:
 
-    with tf.GradientTape() as tape:
+        target_features = dermoscopic_features
 
-        conv_output, feature_map = feature_extractor(
-            img,
-            training=False
+    # --------------------------------------------------------
+    # Gradient only through classification head
+    # --------------------------------------------------------
+
+    with tf.GradientTape(
+        watch_accessed_variables=False
+    ) as tape:
+
+        tape.watch(
+            target_features
         )
 
-        pooled = gap_layer(
-            feature_map
+        clinical_vector = clinical_gap(
+            clinical_features
         )
 
-        if branch == "clinical":
-            merged = model.get_layer(
-                "concatenate_1"
-            )(
-                [
-                    pooled,
-                    pooled_other,
-                    inputs["metadata"],
-                ]
-            )
+        dermoscopic_vector = dermoscopic_gap(
+            dermoscopic_features
+        )
 
-        else:
-            merged = model.get_layer(
-                "concatenate_1"
-            )(
-                [
-                    pooled_other,
-                    pooled,
-                    inputs["metadata"],
-                ]
-            )
+        combined = concatenate(
+            [
+                clinical_vector,
+                dermoscopic_vector,
+                metadata
+            ]
+        )
 
-        x = model.get_layer(
-            "dense_2"
-        )(merged)
+        x = dense(
+            combined
+        )
 
-        x = model.get_layer(
-            "dropout_1"
-        )(
+        x = dropout(
             x,
             training=False
         )
 
-        preds = model.get_layer(
-            "dense_3"
-        )(x)
-
-        class_idx = tf.argmax(
-            preds[0]
+        predictions = output_layer(
+            x
         )
 
-        loss = preds[
-            :,
-            class_idx
-        ]
+        # Automatically use highest probability class
+        if class_index is None:
 
-    grads = tape.gradient(
-        loss,
-        conv_output
+            selected_class = tf.argmax(
+                predictions[0]
+            )
+
+        else:
+
+            selected_class = tf.cast(
+                class_index,
+                tf.int64
+            )
+
+        class_score = tf.gather(
+            predictions[0],
+            selected_class
+        )
+
+    # --------------------------------------------------------
+    # Gradient of class score with respect to
+    # EfficientNet output feature map
+    # --------------------------------------------------------
+
+    gradients = tape.gradient(
+        class_score,
+        target_features
     )
 
-    if grads is None:
+    if gradients is None:
         raise RuntimeError(
-            "Grad-CAM gradient calculation failed."
+            "Grad-CAM gradient could not be calculated."
         )
 
-    pooled_grads = tf.reduce_mean(
-        grads,
+    # --------------------------------------------------------
+    # Global average pooling of gradients
+    # --------------------------------------------------------
+
+    pooled_gradients = tf.reduce_mean(
+        gradients,
         axis=(0, 1, 2)
     )
 
-    conv_output = conv_output[0]
+    # Remove batch dimension
+    feature_map = target_features[0]
+
+    # Weight each feature channel
+    weighted_features = (
+        feature_map
+        * pooled_gradients
+    )
 
     heatmap = tf.reduce_sum(
-        conv_output * pooled_grads,
+        weighted_features,
         axis=-1
     )
 
+    # ReLU
     heatmap = tf.maximum(
         heatmap,
         0
     )
 
-    heatmap /= (
-        tf.reduce_max(heatmap)
-        + 1e-8
+    # Normalize 0 -> 1
+    maximum = tf.reduce_max(
+        heatmap
     )
 
-    result = heatmap.numpy()
+    heatmap = tf.where(
+        maximum > 0,
+        heatmap / maximum,
+        heatmap
+    )
 
-    del grads
-    del pooled_grads
-    del conv_output
+    # Convert to NumPy before cleaning TensorFlow objects
+    heatmap_numpy = heatmap.numpy().astype(
+        np.float32
+    )
+
+    # --------------------------------------------------------
+    # Cleanup
+    # --------------------------------------------------------
+
+    del gradients
+    del pooled_gradients
     del feature_map
-    del pooled
-    del pooled_other
-    del preds
+    del weighted_features
+    del heatmap
+    del clinical_vector
+    del dermoscopic_vector
+    del combined
     del x
-    del merged
+    del predictions
+    del class_score
+    del clinical_features
+    del dermoscopic_features
+    del target_features
 
     gc.collect()
 
-    return result
+    return heatmap_numpy
+
+
+# ============================================================
+# HEATMAP -> PNG -> BASE64
+# ============================================================
+
+def heatmap_to_base64(
+    original_image,
+    heatmap
+):
+
+    """
+    Creates an overlay without Matplotlib.
+
+    Pillow + NumPy are much lighter than importing
+    matplotlib and building figures/font caches.
+    """
+
+    # --------------------------------------------------------
+    # Original image
+    # --------------------------------------------------------
+
+    image = original_image[0].numpy()
+
+    image = np.clip(
+        image,
+        0.0,
+        1.0
+    )
+
+    image_uint8 = (
+        image * 255.0
+    ).astype(
+        np.uint8
+    )
+
+    height = image_uint8.shape[0]
+    width = image_uint8.shape[1]
+
+    # --------------------------------------------------------
+    # Resize heatmap to original image size
+    # --------------------------------------------------------
+
+    heatmap_uint8 = (
+        np.clip(
+            heatmap,
+            0.0,
+            1.0
+        )
+        * 255.0
+    ).astype(
+        np.uint8
+    )
+
+    heatmap_image = Image.fromarray(
+        heatmap_uint8,
+        mode="L"
+    )
+
+    heatmap_image = heatmap_image.resize(
+        (width, height),
+        Image.Resampling.BILINEAR
+    )
+
+    resized_heatmap = np.asarray(
+        heatmap_image,
+        dtype=np.float32
+    ) / 255.0
+
+    # --------------------------------------------------------
+    # Lightweight heat colors
+    #
+    # Low    = transparent
+    # Medium = red
+    # High   = yellow
+    # --------------------------------------------------------
+
+    red = np.clip(
+        resized_heatmap * 2.0,
+        0.0,
+        1.0
+    )
+
+    green = np.clip(
+        (resized_heatmap - 0.5) * 2.0,
+        0.0,
+        1.0
+    )
+
+    blue = np.zeros_like(
+        resized_heatmap
+    )
+
+    colored_heatmap = np.stack(
+        [
+            red,
+            green,
+            blue
+        ],
+        axis=-1
+    )
+
+    original_float = (
+        image_uint8.astype(np.float32)
+        / 255.0
+    )
+
+    # Stronger activation = stronger overlay
+    alpha = (
+        resized_heatmap[..., np.newaxis]
+        * 0.55
+    )
+
+    overlay = (
+        original_float * (1.0 - alpha)
+        + colored_heatmap * alpha
+    )
+
+    overlay = np.clip(
+        overlay * 255.0,
+        0,
+        255
+    ).astype(
+        np.uint8
+    )
+
+    # --------------------------------------------------------
+    # PNG -> Base64
+    # --------------------------------------------------------
+
+    output_image = Image.fromarray(
+        overlay,
+        mode="RGB"
+    )
+
+    buffer = BytesIO()
+
+    output_image.save(
+        buffer,
+        format="PNG",
+        optimize=False
+    )
+
+    encoded = base64.b64encode(
+        buffer.getvalue()
+    ).decode(
+        "utf-8"
+    )
+
+    # --------------------------------------------------------
+    # Cleanup
+    # --------------------------------------------------------
+
+    buffer.close()
+
+    del image
+    del image_uint8
+    del heatmap_uint8
+    del heatmap_image
+    del resized_heatmap
+    del red
+    del green
+    del blue
+    del colored_heatmap
+    del original_float
+    del alpha
+    del overlay
+    del output_image
+
+    gc.collect()
+
+    return encoded
