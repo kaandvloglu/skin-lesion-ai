@@ -4,31 +4,38 @@ import numpy as np
 
 from .preprocessing import preprocess_image
 
+
 CLASS_NAMES = [
     "AKIEC", "BCC", "BEN_OTH", "BKL", "DF",
     "INF", "MAL_OTH", "MEL", "NV", "SCCKA", "VASC"
 ]
 
-MODEL_PATH = Path(__file__).parent.parent / "models" / "multimodal_model.keras"
 
-# Model başlangıçta yüklenmeyecek
-model = None
+MODEL_PATH = Path(__file__).parent.parent / "models" / "multimodal_model.tflite"
+
+interpreter = None
+input_details = None
+output_details = None
 
 
-def get_model():
-    global model
+def get_interpreter():
+    global interpreter, input_details, output_details
 
-    if model is None:
-        print("DEBUG: Loading AI model...", flush=True)
+    if interpreter is None:
+        print("DEBUG: Loading TFLite model...", flush=True)
 
-        model = tf.keras.models.load_model(
-            MODEL_PATH,
-            compile=False
+        interpreter = tf.lite.Interpreter(
+            model_path=str(MODEL_PATH)
         )
 
-        print("DEBUG: AI model loaded successfully.", flush=True)
+        interpreter.allocate_tensors()
 
-    return model
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+
+        print("DEBUG: TFLite model loaded successfully.", flush=True)
+
+    return interpreter
 
 
 def predict(clinical_path, dermoscopic_path, metadata):
@@ -43,11 +50,11 @@ def predict(clinical_path, dermoscopic_path, metadata):
     derm = preprocess_image(dermoscopic_path)
     print("DEBUG 5: dermoscopic image ready", flush=True)
 
-    clinical = np.expand_dims(clinical, 0)
-    derm = np.expand_dims(derm, 0)
-    meta = np.expand_dims(metadata, 0)
+    clinical = np.expand_dims(clinical, 0).astype(np.float32)
+    derm = np.expand_dims(derm, 0).astype(np.float32)
+    meta = np.expand_dims(metadata, 0).astype(np.float32)
 
-    print("DEBUG 6: model inputs prepared", flush=True)
+    print("DEBUG 6: TFLite inputs prepared", flush=True)
 
     print(
         f"DEBUG: clinical={clinical.shape}, "
@@ -56,23 +63,32 @@ def predict(clinical_path, dermoscopic_path, metadata):
         flush=True
     )
 
-    # Model sadece ilk tahminde burada yüklenecek
-    current_model = get_model()
+    current_interpreter = get_interpreter()
 
-    print("DEBUG 7: model inference starting...", flush=True)
+    print("DEBUG 7: TFLite inference starting...", flush=True)
 
-    outputs = current_model(
-        {
-            "clinical": clinical,
-            "dermoscopic": derm,
-            "metadata": meta
-        },
-        training=False
+    current_interpreter.set_tensor(
+        input_details[0]["index"],
+        clinical
     )
 
-    scores = outputs.numpy()[0]
+    current_interpreter.set_tensor(
+        input_details[1]["index"],
+        derm
+    )
 
-    print("DEBUG 8: model inference completed", flush=True)
+    current_interpreter.set_tensor(
+        input_details[2]["index"],
+        meta
+    )
+
+    current_interpreter.invoke()
+
+    scores = current_interpreter.get_tensor(
+        output_details[0]["index"]
+    )[0]
+
+    print("DEBUG 8: TFLite inference completed", flush=True)
 
     result = {
         "prediction": CLASS_NAMES[np.argmax(scores)],

@@ -25,13 +25,23 @@ def root():
 
 @app.get("/model-info")
 def model_info():
-    from ai.src.inference import get_model
+    from ai.src.inference import get_interpreter
 
-    current_model = get_model()
+    current_interpreter = get_interpreter()
+    inputs = current_interpreter.get_input_details()
+    outputs = current_interpreter.get_output_details()
 
     return {
         "model_loaded": True,
-        "input_shapes": [list(shape) for shape in current_model.input_shape]
+        "model_type": "TFLite",
+        "input_shapes": [
+            detail["shape"].tolist()
+            for detail in inputs
+        ],
+        "output_shapes": [
+            detail["shape"].tolist()
+            for detail in outputs
+        ]
     }
 
 
@@ -45,12 +55,18 @@ async def predict_endpoint(
     site: str = Form(...)
 ):
     # Save clinical image temporarily
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as c_file:
+    with tempfile.NamedTemporaryFile(
+        suffix=".jpg",
+        delete=False
+    ) as c_file:
         c_file.write(await clinical_image.read())
         clinical_path = Path(c_file.name)
 
     # Save dermoscopic image temporarily
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as d_file:
+    with tempfile.NamedTemporaryFile(
+        suffix=".jpg",
+        delete=False
+    ) as d_file:
         d_file.write(await dermoscopic_image.read())
         dermoscopic_path = Path(d_file.name)
 
@@ -63,13 +79,13 @@ async def predict_endpoint(
             "site": site
         }])
 
-        # Convert metadata to the exact 11 columns used during training
+        # Convert metadata to exact training columns
         metadata = encode_metadata(
             df,
             columns=TRAINING_COLUMNS
         ).iloc[0].to_numpy(dtype=np.float32)
 
-        # Run AI model
+        # Run TFLite AI model
         result = predict(
             clinical_path,
             dermoscopic_path,
