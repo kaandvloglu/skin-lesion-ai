@@ -23,6 +23,16 @@ def root():
     return {"message": "AI service is running"}
 
 
+@app.get("/model-info")
+def model_info():
+    from ai.src.inference import model
+
+    return {
+        "model_loaded": True,
+        "input_shapes": [list(shape) for shape in model.input_shape]
+    }
+
+
 @app.post("/predict")
 async def predict_endpoint(
     clinical_image: UploadFile = File(...),
