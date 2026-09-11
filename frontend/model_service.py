@@ -24,6 +24,7 @@ import io
 import time
 import base64
 
+import requests
 import numpy as np
 from PIL import Image
 
@@ -136,7 +137,7 @@ def _predict_backend(clinical_img, dermoscopic_img, metadata) -> dict:
 
     # 2) GRAD-CAM — ayrı endpoint /api/predictions/gradcam (base64 döner).
     #    En iyi çaba: başarısız olursa None döner, tahmin yine gösterilir.
-    gradcam_clinical, gradcam_dermoscopic = _fetch_gradcam(
+    gradcam_clinical, gradcam_dermoscopic, gradcam_debug = _fetch_gradcam(
         session, clinical_img, dermoscopic_img, metadata)
 
     # Yedek: bazı sürümler ısı haritasını tahmin cevabının içinde de gönderebilir.
@@ -149,6 +150,7 @@ def _predict_backend(clinical_img, dermoscopic_img, metadata) -> dict:
         "scores": scores,
         "gradcam_clinical": gradcam_clinical,
         "gradcam_dermoscopic": gradcam_dermoscopic,
+        "gradcam_debug": gradcam_debug,
     }
 
 
@@ -172,21 +174,40 @@ def _build_multipart(clinical_img, dermoscopic_img, metadata):
 def _fetch_gradcam(session, clinical_img, dermoscopic_img, metadata):
     """
     Grad-CAM endpoint'ini çağırır ve iki base64 görseli PIL görsele çevirir.
-    Herhangi bir hata olursa (None, None) döner; tahmin akışını bozmaz.
+    (clinical, dermoscopic, debug) döndürür. Hata olursa görseller None olur;
+    debug sözlüğü ne olduğunu (durum kodu, alanlar, uzunluklar, hata) anlatır.
     """
+    debug = {"url": f"{BACKEND_URL}{GRADCAM_PATH}", "attempted": True}
     try:
         files, data = _build_multipart(clinical_img, dermoscopic_img, metadata)
         r = session.post(f"{BACKEND_URL}{GRADCAM_PATH}", files=files, data=data, timeout=TIMEOUT)
+        debug["status_code"] = r.status_code
         if r.status_code != 200:
-            return None, None
-        payload = r.json()
+            debug["body_preview"] = (r.text or "")[:300]
+            return None, None, debug
+        try:
+            payload = r.json()
+        except ValueError:
+            debug["error"] = "response is not JSON"
+            debug["body_preview"] = (r.text or "")[:300]
+            return None, None, debug
+        debug["keys"] = list(payload.keys())[:20]
+        for k in ("clinical_gradcam", "dermoscopic_gradcam"):
+            v = payload.get(k)
+            debug[f"{k}_len"] = len(v) if isinstance(v, str) else None
         clinical = _extract_image(payload, [
             "clinical_gradcam", "gradcam_clinical", "clinical", "heatmap_clinical"])
         dermoscopic = _extract_image(payload, [
             "dermoscopic_gradcam", "gradcam_dermoscopic", "dermoscopic", "heatmap_dermoscopic"])
-        return clinical, dermoscopic
-    except Exception:
-        return None, None
+        debug["clinical_decoded"] = clinical is not None
+        debug["dermoscopic_decoded"] = dermoscopic is not None
+        return clinical, dermoscopic, debug
+    except requests.RequestException as e:
+        debug["error"] = f"request error: {type(e).__name__}: {e}"[:200]
+        return None, None, debug
+    except Exception as e:
+        debug["error"] = f"{type(e).__name__}: {e}"[:200]
+        return None, None, debug
 
 
 def _to_jpeg_bytes(img: Image.Image) -> bytes:
@@ -206,14 +227,18 @@ def _extract_image(payload: dict, keys) -> Image.Image | None:
         val = payload.get(k)
         if not val or not isinstance(val, str):
             continue
-        try:
-            # "data:image/png;base64,...." biçimini de destekle
-            if "," in val and val.strip().lower().startswith("data:"):
-                val = val.split(",", 1)[1]
-            raw = base64.b64decode(val)
-            return Image.open(io.BytesIO(raw)).convert("RGB")
-        except Exception:
-            continue
+        s = val.strip()
+        # "data:image/png;base64,...." biçimini de destekle
+        if s.lower().startswith("data:") and "," in s:
+            s = s.split(",", 1)[1]
+        s = s.strip()
+        pad = "=" * (-len(s) % 4)  # eksik dolgu (padding) varsa tamamla
+        for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+            try:
+                raw = decoder(s + pad)
+                return Image.open(io.BytesIO(raw)).convert("RGB")
+            except Exception:
+                continue
     return None
 
 
