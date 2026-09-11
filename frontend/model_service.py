@@ -35,6 +35,7 @@ import auth_service
 USE_BACKEND = True
 BACKEND_URL = "https://skin-lesion-backend-nnfv.onrender.com"
 PREDICT_PATH = "/api/predictions/upload"
+GRADCAM_PATH = "/api/predictions/gradcam"  # Grad-CAM ayrı endpoint (base64 döner)
 TIMEOUT = 120  # Render ilk istekte "uykudan" uyanabilir → geniş zaman aşımı
 
 # ---------------------------------------------------------------------------
@@ -121,9 +122,40 @@ def predict(clinical_img: Image.Image,
 # GERÇEK backend tahmini
 # ---------------------------------------------------------------------------
 def _predict_backend(clinical_img, dermoscopic_img, metadata) -> dict:
+    session = auth_service.get_session()
+
+    # 1) TAHMİN — /api/predictions/upload
+    files, data = _build_multipart(clinical_img, dermoscopic_img, metadata)
+    r = session.post(f"{BACKEND_URL}{PREDICT_PATH}", files=files, data=data, timeout=TIMEOUT)
+    r.raise_for_status()
+    payload = r.json()
+
+    # Skorları CLASSES sırasına göre listeye çevir
+    raw_scores = payload.get("scores", {}) or {}
+    scores = [float(raw_scores.get(cls["code"], 0.0)) for cls in CLASSES]
+
+    # 2) GRAD-CAM — ayrı endpoint /api/predictions/gradcam (base64 döner).
+    #    En iyi çaba: başarısız olursa None döner, tahmin yine gösterilir.
+    gradcam_clinical, gradcam_dermoscopic = _fetch_gradcam(
+        session, clinical_img, dermoscopic_img, metadata)
+
+    # Yedek: bazı sürümler ısı haritasını tahmin cevabının içinde de gönderebilir.
+    if gradcam_clinical is None:
+        gradcam_clinical = _extract_image(payload, ["clinical_gradcam", "gradcam_clinical"])
+    if gradcam_dermoscopic is None:
+        gradcam_dermoscopic = _extract_image(payload, ["dermoscopic_gradcam", "gradcam_dermoscopic"])
+
+    return {
+        "scores": scores,
+        "gradcam_clinical": gradcam_clinical,
+        "gradcam_dermoscopic": gradcam_dermoscopic,
+    }
+
+
+def _build_multipart(clinical_img, dermoscopic_img, metadata):
+    """İstek gövdesini (görseller + metadata) taze olarak hazırlar."""
     sex_label = metadata.get("sex", "")
     site_label = metadata.get("site", "")
-
     files = {
         "clinical_image":    ("clinical.jpg",    _to_jpeg_bytes(clinical_img),    "image/jpeg"),
         "dermoscopic_image": ("dermoscopic.jpg", _to_jpeg_bytes(dermoscopic_img), "image/jpeg"),
@@ -134,37 +166,27 @@ def _predict_backend(clinical_img, dermoscopic_img, metadata) -> dict:
         "skin_tone": str(int(metadata.get("skin_tone", 0))),
         "site":      SITE_API.get(site_label, str(site_label)),
     }
+    return files, data
 
-    session = auth_service.get_session()
-    r = session.post(
-        f"{BACKEND_URL}{PREDICT_PATH}",
-        files=files,
-        data=data,
-        timeout=TIMEOUT,
-    )
-    r.raise_for_status()
-    payload = r.json()
 
-    # --- Skorları CLASSES sırasına göre listeye çevir -----------------------
-    raw_scores = payload.get("scores", {}) or {}
-    scores = [float(raw_scores.get(cls["code"], 0.0)) for cls in CLASSES]
-
-    # --- Grad-CAM ısı haritaları (henüz cevaba eklenmemiş olabilir) ---------
-    # Değişik olası alan adlarını dener; yoksa None döner → arayüz o bölümü gizler.
-    gradcam_clinical = _extract_image(payload, [
-        "gradcam_clinical", "gradCamClinical", "heatmap_clinical",
-        "gradcam_clinical_image", "clinical_gradcam",
-    ])
-    gradcam_dermoscopic = _extract_image(payload, [
-        "gradcam_dermoscopic", "gradCamDermoscopic", "heatmap_dermoscopic",
-        "gradcam_dermoscopic_image", "dermoscopic_gradcam",
-    ])
-
-    return {
-        "scores": scores,
-        "gradcam_clinical": gradcam_clinical,
-        "gradcam_dermoscopic": gradcam_dermoscopic,
-    }
+def _fetch_gradcam(session, clinical_img, dermoscopic_img, metadata):
+    """
+    Grad-CAM endpoint'ini çağırır ve iki base64 görseli PIL görsele çevirir.
+    Herhangi bir hata olursa (None, None) döner; tahmin akışını bozmaz.
+    """
+    try:
+        files, data = _build_multipart(clinical_img, dermoscopic_img, metadata)
+        r = session.post(f"{BACKEND_URL}{GRADCAM_PATH}", files=files, data=data, timeout=TIMEOUT)
+        if r.status_code != 200:
+            return None, None
+        payload = r.json()
+        clinical = _extract_image(payload, [
+            "clinical_gradcam", "gradcam_clinical", "clinical", "heatmap_clinical"])
+        dermoscopic = _extract_image(payload, [
+            "dermoscopic_gradcam", "gradcam_dermoscopic", "dermoscopic", "heatmap_dermoscopic"])
+        return clinical, dermoscopic
+    except Exception:
+        return None, None
 
 
 def _to_jpeg_bytes(img: Image.Image) -> bytes:
