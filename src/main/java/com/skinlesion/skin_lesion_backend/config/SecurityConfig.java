@@ -24,7 +24,8 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/logout",
-                                "/api/predictions/upload"
+                                "/api/predictions/upload",
+                                "/api/predictions/gradcam"
                         )
                 )
                 .authorizeHttpRequests(auth -> auth
@@ -32,7 +33,8 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/predictions/test",
-                                "/api/predictions/upload"
+                                "/api/predictions/upload",
+                                "/api/predictions/gradcam"
                         ).permitAll()
                         .anyRequest().authenticated()
                 );
