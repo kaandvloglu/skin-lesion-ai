@@ -32,6 +32,11 @@ public class GradcamService {
             Integer skinTone,
             String site) throws Exception {
 
+        System.out.println("=== GRADCAM REQUEST STARTED ===");
+        System.out.println("Grad-CAM URL: " + gradcamServiceUrl);
+        System.out.println("Clinical image size: " + clinicalImage.getSize());
+        System.out.println("Dermoscopic image size: " + dermoscopicImage.getSize());
+
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
 
         body.add(
@@ -57,12 +62,46 @@ public class GradcamService {
         body.add("skin_tone", skinTone.toString());
         body.add("site", site);
 
-        return restClient
-                .post()
-                .uri(gradcamServiceUrl + "/gradcam")
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(body)
-                .retrieve()
-                .body(new ParameterizedTypeReference<Map<String, String>>() {});
+        System.out.println("Sending request to Railway Grad-CAM...");
+
+        try {
+
+            Map<String, String> response = restClient
+                    .post()
+                    .uri(gradcamServiceUrl + "/gradcam")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(body)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<Map<String, String>>() {});
+
+            System.out.println("Railway Grad-CAM response received.");
+
+            if (response == null) {
+                throw new IllegalStateException(
+                        "Railway Grad-CAM returned an empty response.");
+            }
+
+            System.out.println(
+                    "Clinical Grad-CAM length: "
+                            + response.getOrDefault("clinical_gradcam", "").length()
+            );
+
+            System.out.println(
+                    "Dermoscopic Grad-CAM length: "
+                            + response.getOrDefault("dermoscopic_gradcam", "").length()
+            );
+
+            System.out.println("=== GRADCAM REQUEST FINISHED ===");
+
+            return response;
+
+        } catch (Exception e) {
+
+            System.err.println("=== GRADCAM REQUEST FAILED ===");
+            System.err.println("Error type: " + e.getClass().getName());
+            System.err.println("Error message: " + e.getMessage());
+
+            throw e;
+        }
     }
 }
